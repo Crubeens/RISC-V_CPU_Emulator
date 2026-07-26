@@ -456,6 +456,12 @@ void test_virtio_block_read()
             4096U) == BusFault::None);
     CHECK(
         store(
+            virtio_base + 0x70U,
+            AccessWidth::Word,
+            0U) == BusFault::None);
+    CHECK(virtio.queue_state().page_size == 4096U);
+    CHECK(
+        store(
             virtio_base + 0x38U,
             AccessWidth::Word,
             8U) == BusFault::None);

@@ -197,17 +197,30 @@ BusFault VirtioBlock::write(
         update_queue_addresses();
         break;
     case queue_notify_offset:
+        ++statistics_.queue_notify_writes;
         if (word == 0 && queue_configured()) {
             notification_pending_ = true;
+            ++statistics_.queue_notifications;
+        } else {
+            ++statistics_.rejected_notifications;
         }
         break;
     case interrupt_ack_offset:
+        if ((word & 0x1U) != 0U) {
+            ++statistics_.interrupt_acknowledgements;
+        }
         interrupt_status_ &=
             static_cast<std::uint8_t>(~word);
         break;
     case status_offset:
         if (word == 0) {
+            // Linux writes the legacy MMIO guest page size before
+            // register_virtio_device() performs a device-status reset.
+            // Retaining that transport value across status reset matches
+            // established legacy MMIO behavior while queues are cleared.
+            const auto guest_page_size = guest_page_size_;
             reset();
+            guest_page_size_ = guest_page_size;
         } else {
             device_status_ = static_cast<std::uint8_t>(word);
         }
@@ -246,6 +259,25 @@ bool VirtioBlock::dirty() const noexcept
 void VirtioBlock::clear_dirty() noexcept
 {
     disk_dirty_ = false;
+}
+
+const VirtioBlockStatistics& VirtioBlock::statistics()
+    const noexcept
+{
+    return statistics_;
+}
+
+VirtioBlockQueueState VirtioBlock::queue_state() const noexcept
+{
+    return {
+        .page_size = guest_page_size_,
+        .selected_queue = queue_select_,
+        .queue_size = queue_num_,
+        .alignment = queue_align_,
+        .page_frame_number = queue_pfn_,
+        .device_status = device_status_,
+        .configured = queue_configured(),
+    };
 }
 
 std::span<std::uint8_t> VirtioBlock::disk_image() noexcept
@@ -335,6 +367,7 @@ void VirtioBlock::process_queue(platform::DmaAccess& dma)
         const auto head =
             static_cast<std::uint16_t>(head_result.value);
         std::uint32_t bytes_written = 0;
+        ++statistics_.descriptor_chains;
         static_cast<void>(
             process_request(dma, head, bytes_written));
 
@@ -369,6 +402,7 @@ void VirtioBlock::process_queue(platform::DmaAccess& dma)
         ++last_available_index_;
         ++processed;
         interrupt_status_ |= 0x1U;
+        ++statistics_.interrupts_raised;
     }
 }
 
@@ -435,6 +469,11 @@ bool VirtioBlock::process_request(
     const auto request_type =
         static_cast<std::uint32_t>(type_result.value);
     const auto sector = sector_result.value;
+    if (request_type == request_read) {
+        ++statistics_.read_requests;
+    } else if (request_type == request_write) {
+        ++statistics_.write_requests;
+    }
 
     std::uint8_t completion_status = status_ok;
     std::uint64_t disk_offset = 0;
@@ -503,6 +542,7 @@ bool VirtioBlock::process_request(
                 disk_[disk_index] =
                     static_cast<std::uint8_t>(byte_result.value);
             }
+            ++statistics_.bytes_transferred;
         }
 
         disk_offset += data_length;
@@ -518,8 +558,12 @@ bool VirtioBlock::process_request(
         status_descriptor.address,
         AccessWidth::Byte,
         completion_status);
+    if (completion_status != status_ok || !status_written) {
+        ++statistics_.failed_requests;
+    }
     if (status_written) {
         ++bytes_written;
+        ++statistics_.completed_requests;
     }
     return status_written;
 }

@@ -90,3 +90,8 @@ assert_fdt_property(
     "stdout-path"
     "s"
     "serial0:115200n8")
+assert_fdt_property(
+    "/chosen"
+    "bootargs"
+    "s"
+    "console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait")

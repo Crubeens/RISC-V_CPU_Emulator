@@ -9,6 +9,30 @@
 
 namespace rv32::devices {
 
+struct VirtioBlockStatistics {
+    std::uint64_t queue_notify_writes{};
+    std::uint64_t queue_notifications{};
+    std::uint64_t rejected_notifications{};
+    std::uint64_t descriptor_chains{};
+    std::uint64_t completed_requests{};
+    std::uint64_t read_requests{};
+    std::uint64_t write_requests{};
+    std::uint64_t failed_requests{};
+    std::uint64_t bytes_transferred{};
+    std::uint64_t interrupts_raised{};
+    std::uint64_t interrupt_acknowledgements{};
+};
+
+struct VirtioBlockQueueState {
+    std::uint32_t page_size{};
+    std::uint32_t selected_queue{};
+    std::uint16_t queue_size{};
+    std::uint32_t alignment{};
+    std::uint32_t page_frame_number{};
+    std::uint8_t device_status{};
+    bool configured{};
+};
+
 class VirtioBlock final : public platform::Device {
   public:
     static constexpr std::uint32_t sector_size = 512;
@@ -43,6 +67,10 @@ class VirtioBlock final : public platform::Device {
     [[nodiscard]] bool interrupt_pending() const noexcept;
     [[nodiscard]] bool dirty() const noexcept;
     void clear_dirty() noexcept;
+    [[nodiscard]] const VirtioBlockStatistics& statistics()
+        const noexcept;
+    [[nodiscard]] VirtioBlockQueueState queue_state()
+        const noexcept;
 
     [[nodiscard]] std::span<std::uint8_t> disk_image() noexcept;
     [[nodiscard]] std::span<const std::uint8_t> disk_image() const noexcept;
@@ -138,6 +166,7 @@ class VirtioBlock final : public platform::Device {
 
     bool notification_pending_{};
     bool disk_dirty_{};
+    VirtioBlockStatistics statistics_{};
 };
 
 } // namespace rv32::devices

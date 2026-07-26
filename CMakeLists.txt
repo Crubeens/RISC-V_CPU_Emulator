@@ -530,5 +530,30 @@ if(RV32_BUILD_TESTS)
             rv32_boot_run_smoke
             PROPERTIES
                 PASS_REGULAR_EXPRESSION "OK")
+
+        set(
+            RV32_TEST_DISK
+            "${CMAKE_CURRENT_BINARY_DIR}/test-disk.img")
+        string(REPEAT "0" 512 RV32_TEST_DISK_CONTENT)
+        file(
+            WRITE
+            "${RV32_TEST_DISK}"
+            "${RV32_TEST_DISK_CONTENT}")
+
+        add_test(
+            NAME rv32_boot_disk_smoke
+            COMMAND
+                rv32_emulator
+                --boot-disk
+                "${RV32_BOOT_SMOKE_BIN}"
+                "${RV32_BAREMETAL_BIN}"
+                "${RV32_VIRT_DTB}"
+                "${RV32_TEST_DISK}"
+                100)
+        set_tests_properties(
+            rv32_boot_disk_smoke
+            PROPERTIES
+                PASS_REGULAR_EXPRESSION
+                    "Virtual disk loaded")
     endif()
 endif()

@@ -1,27 +1,42 @@
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
+#include <span>
 #include <string_view>
 #include <system_error>
 #include <vector>
+
+#if defined(_WIN32)
+#include <conio.h>
+#else
+#include <sys/select.h>
+#include <unistd.h>
+#endif
 
 #include "rv32/core/core.hpp"
 #include "rv32/devices/clint.hpp"
 #include "rv32/devices/syscon.hpp"
 #include "rv32/devices/uart16550.hpp"
+#include "rv32/devices/virtio_block.hpp"
 #include "rv32/platform/machine.hpp"
 
 namespace {
 
 constexpr std::uint64_t default_step_limit = 100'000'000ULL;
+constexpr std::uint64_t unlimited_step_limit =
+    std::numeric_limits<std::uint64_t>::max();
+constexpr std::uint64_t console_poll_interval = 1024ULL;
 
 struct OwnedBootImages {
     std::vector<std::uint8_t> firmware;
     std::vector<std::uint8_t> kernel;
     std::vector<std::uint8_t> device_tree;
+    std::vector<std::uint8_t> virtual_disk;
 };
 
 bool read_binary_image(
@@ -70,6 +85,99 @@ bool read_boot_images(char** argv, OwnedBootImages& images)
             argv[4],
             "device tree image",
             images.device_tree);
+}
+
+bool read_virtual_disk(
+    const char* path,
+    std::vector<std::uint8_t>& image)
+{
+    if (!read_binary_image(path, "virtual disk image", image)) {
+        return false;
+    }
+
+    const auto sector_size = static_cast<std::size_t>(
+        rv32::devices::VirtioBlock::sector_size);
+    if ((image.size() % sector_size) != 0U) {
+        std::cerr
+            << "Virtual disk image size must be a multiple of "
+            << sector_size << " bytes: "
+            << path << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool write_virtual_disk(
+    const char* path,
+    std::span<const std::uint8_t> image)
+{
+    if (image.size() >
+        static_cast<std::size_t>(
+            std::numeric_limits<std::streamsize>::max())) {
+        std::cerr
+            << "Virtual disk image is too large to write: "
+            << path << '\n';
+        return false;
+    }
+
+    std::fstream output(
+        path,
+        std::ios::binary |
+            std::ios::in |
+            std::ios::out);
+    if (!output) {
+        std::cerr
+            << "Cannot open virtual disk image for writeback: "
+            << path << '\n';
+        return false;
+    }
+
+    output.write(
+        reinterpret_cast<const char*>(image.data()),
+        static_cast<std::streamsize>(image.size()));
+    output.flush();
+    if (!output) {
+        std::cerr
+            << "Cannot write virtual disk image: "
+            << path << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool load_virtual_disk(
+    rv32::platform::Machine& machine,
+    const std::vector<std::uint8_t>& image)
+{
+    auto target = machine.virtio_block().disk_image();
+    if (target.size() != image.size()) {
+        std::cerr
+            << "Virtual disk capacity does not match the image size\n";
+        return false;
+    }
+
+    std::copy(image.begin(), image.end(), target.begin());
+    machine.virtio_block().clear_dirty();
+    return true;
+}
+
+bool write_back_virtual_disk(
+    rv32::platform::Machine& machine,
+    const char* path)
+{
+    auto& disk = machine.virtio_block();
+    if (path == nullptr || !disk.dirty()) {
+        return true;
+    }
+    if (!write_virtual_disk(path, disk.disk_image())) {
+        return false;
+    }
+
+    disk.clear_dirty();
+    std::cout
+        << "Virtual disk writeback completed: "
+        << path << '\n';
+    return true;
 }
 
 void print_address(
@@ -186,6 +294,49 @@ void flush_uart(rv32::platform::Machine& machine)
     }
 }
 
+void forward_console_input(rv32::platform::Machine& machine)
+{
+    std::array<char, 256> input{};
+    std::size_t size = 0;
+
+#if defined(_WIN32)
+    while (size < input.size() && _kbhit() != 0) {
+        const int character = _getch();
+        if (character == 0 || character == 0xE0) {
+            if (_kbhit() != 0) {
+                static_cast<void>(_getch());
+            }
+            continue;
+        }
+        input[size] = static_cast<char>(character);
+        ++size;
+    }
+#else
+    fd_set descriptors;
+    FD_ZERO(&descriptors);
+    FD_SET(STDIN_FILENO, &descriptors);
+    timeval timeout{};
+    const int ready = select(
+        STDIN_FILENO + 1,
+        &descriptors,
+        nullptr,
+        nullptr,
+        &timeout);
+    if (ready > 0 && FD_ISSET(STDIN_FILENO, &descriptors)) {
+        const auto count =
+            read(STDIN_FILENO, input.data(), input.size());
+        if (count > 0) {
+            size = static_cast<std::size_t>(count);
+        }
+    }
+#endif
+
+    if (size != 0U) {
+        machine.uart().inject_received(
+            std::string_view(input.data(), size));
+    }
+}
+
 bool can_continue(rv32::StepStatus status)
 {
     return status == rv32::StepStatus::Retired ||
@@ -285,21 +436,71 @@ void print_cpu_diagnostics(rv32::platform::Machine& machine)
         "CPU diagnostic snapshot",
         machine.core().snapshot(),
         machine.clint().mtime());
+
+    const auto& disk = machine.virtio_block();
+    const auto& statistics = disk.statistics();
+    const auto queue = disk.queue_state();
+    std::cerr
+        << "VirtIO block diagnostics:\n"
+        << "  notify-writes="
+        << statistics.queue_notify_writes
+        << ", accepted="
+        << statistics.queue_notifications
+        << ", rejected="
+        << statistics.rejected_notifications
+        << ", chains=" << statistics.descriptor_chains
+        << ", completed=" << statistics.completed_requests
+        << ", failed=" << statistics.failed_requests
+        << '\n'
+        << "  reads=" << statistics.read_requests
+        << ", writes=" << statistics.write_requests
+        << ", bytes=" << statistics.bytes_transferred
+        << ", irq-raised=" << statistics.interrupts_raised
+        << ", irq-acks="
+        << statistics.interrupt_acknowledgements
+        << ", dirty=" << (disk.dirty() ? "yes" : "no")
+        << '\n'
+        << "  queue: page-size=" << queue.page_size
+        << ", selected=" << queue.selected_queue
+        << ", size=" << queue.queue_size
+        << ", align=" << queue.alignment
+        << ", pfn=0x" << std::hex
+        << queue.page_frame_number
+        << ", status=0x"
+        << static_cast<unsigned int>(queue.device_status)
+        << std::dec
+        << ", configured="
+        << (queue.configured ? "yes" : "no")
+        << '\n';
 }
 
-int run_boot(int argc, char** argv)
+int run_boot(
+    int argc,
+    char** argv,
+    bool use_virtual_disk)
 {
-    if (argc != 5 && argc != 6) {
-        std::cerr
-            << "usage: rv32_emulator --boot "
-            << "<opensbi.bin> <linux-image> <board.dtb> "
-            << "[max-steps]\n";
+    const int required_arguments = use_virtual_disk ? 6 : 5;
+    if (argc != required_arguments &&
+        argc != required_arguments + 1) {
+        std::cerr << "usage: rv32_emulator "
+            << (use_virtual_disk ? "--boot-disk " : "--boot ")
+            << "<opensbi.bin> <linux-image> <board.dtb> ";
+        if (use_virtual_disk) {
+            std::cerr << "<disk-image> ";
+        }
+        std::cerr << "[max-steps]\n";
         return 2;
     }
 
-    std::uint64_t step_limit = default_step_limit;
-    if (argc == 6 &&
-        !parse_step_limit(argv[5], step_limit)) {
+    std::uint64_t step_limit =
+        use_virtual_disk
+            ? unlimited_step_limit
+            : default_step_limit;
+    const int step_limit_index = use_virtual_disk ? 6 : 5;
+    if (argc == required_arguments + 1 &&
+        !parse_step_limit(
+            argv[step_limit_index],
+            step_limit)) {
         std::cerr
             << "max-steps must be a positive decimal integer\n";
         return 2;
@@ -310,17 +511,62 @@ int run_boot(int argc, char** argv)
         return 3;
     }
 
-    rv32::platform::Machine machine;
+    const char* virtual_disk_path = nullptr;
+    rv32::platform::MachineConfig machine_config;
+    if (use_virtual_disk) {
+        virtual_disk_path = argv[5];
+        if (!read_virtual_disk(
+                virtual_disk_path,
+                images.virtual_disk)) {
+            return 3;
+        }
+        machine_config.virtual_disk_size =
+            static_cast<std::uint64_t>(
+                images.virtual_disk.size());
+    }
+
+    rv32::platform::Machine machine(machine_config);
+    if (use_virtual_disk &&
+        !load_virtual_disk(
+            machine,
+            images.virtual_disk)) {
+        return 3;
+    }
+
     const auto boot_result = prepare_boot(machine, images);
     if (report_boot_error(boot_result)) {
         return 4;
     }
     print_boot_state(machine, images, boot_result);
+    if (use_virtual_disk) {
+        std::cout
+            << "Virtual disk loaded: "
+            << virtual_disk_path
+            << " (" << images.virtual_disk.size()
+            << " bytes, read-write)\n";
+    }
+    std::cout << "Starting guest; machine-step limit: ";
+    if (step_limit == unlimited_step_limit) {
+        std::cout << "unlimited\n";
+    } else {
+        std::cout << step_limit << '\n';
+    }
     std::cout
-        << "Starting guest; machine-step limit: "
-        << step_limit << '\n';
+        << "Host terminal input is connected to guest UART.\n";
+
+    const auto finish =
+        [&machine, virtual_disk_path](int result) {
+            return write_back_virtual_disk(
+                       machine,
+                       virtual_disk_path)
+                       ? result
+                       : 7;
+        };
 
     for (std::uint64_t step = 0; step < step_limit; ++step) {
+        if ((step % console_poll_interval) == 0U) {
+            forward_console_input(machine);
+        }
         const auto result = machine.step();
         flush_uart(machine);
 
@@ -334,7 +580,7 @@ int run_boot(int argc, char** argv)
                 << "\nGuest requested " << action_name
                 << " after " << step + 1U
                 << " machine steps.\n";
-            return 0;
+            return finish(0);
         }
 
         if (!can_continue(result.status)) {
@@ -345,7 +591,7 @@ int run_boot(int argc, char** argv)
                 << ", instruction=0x" << result.instruction
                 << std::dec << '\n';
             print_cpu_diagnostics(machine);
-            return 5;
+            return finish(5);
         }
     }
 
@@ -357,7 +603,7 @@ int run_boot(int argc, char** argv)
         << ", pc=0x" << std::hex << state.pc
         << std::dec << '\n';
     print_cpu_diagnostics(machine);
-    return 6;
+    return finish(6);
 }
 
 int run_framework_smoke()
@@ -420,7 +666,10 @@ int main(int argc, char** argv)
         return load_boot_images(argc, argv);
     }
     if (std::string_view(argv[1]) == "--boot") {
-        return run_boot(argc, argv);
+        return run_boot(argc, argv, false);
+    }
+    if (std::string_view(argv[1]) == "--boot-disk") {
+        return run_boot(argc, argv, true);
     }
 
     std::cerr
@@ -430,6 +679,10 @@ int main(int argc, char** argv)
         << "<opensbi.bin> <linux-image> <board.dtb>\n"
         << "  rv32_emulator --boot "
         << "<opensbi.bin> <linux-image> <board.dtb> "
+        << "[max-steps]\n"
+        << "  rv32_emulator --boot-disk "
+        << "<opensbi.bin> <linux-image> <board.dtb> "
+        << "<disk-image> "
         << "[max-steps]\n";
     return 2;
 }
