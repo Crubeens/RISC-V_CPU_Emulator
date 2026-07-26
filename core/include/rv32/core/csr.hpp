@@ -129,16 +129,24 @@ inline constexpr std::uint32_t mpie = 1U << 7U;
 inline constexpr std::uint32_t spp = 1U << 8U;
 inline constexpr unsigned int mpp_shift = 11U;
 inline constexpr std::uint32_t mpp = 0x3U << mpp_shift;
+inline constexpr std::uint32_t mprv = 1U << 17U;
+inline constexpr std::uint32_t sum = 1U << 18U;
+inline constexpr std::uint32_t mxr = 1U << 19U;
+inline constexpr std::uint32_t tvm = 1U << 20U;
 inline constexpr std::uint32_t tw = 1U << 21U;
 inline constexpr std::uint32_t tsr = 1U << 22U;
-inline constexpr std::uint32_t supervisor_view = sie | spie | spp;
+inline constexpr std::uint32_t supervisor_view =
+    sie | spie | spp | sum | mxr;
 inline constexpr std::uint32_t implemented =
-    supervisor_view | mie | mpie | mpp | tw | tsr;
+    supervisor_view | mie | mpie | mpp | mprv | tvm | tw | tsr;
 
 } // namespace mstatus_bits
 
 inline constexpr std::uint32_t supported_exception_delegation =
-    0x000003FFU;
+    0x000003FFU |
+    (1U << 12U) |
+    (1U << 13U) |
+    (1U << 15U);
 inline constexpr std::uint32_t supported_interrupt_delegation =
     (1U << 1U) | (1U << 5U) | (1U << 9U);
 inline constexpr std::uint32_t supported_counter_enable = 0x7U;

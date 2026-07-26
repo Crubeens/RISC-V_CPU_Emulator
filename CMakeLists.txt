@@ -39,6 +39,7 @@ add_library(
     core/src/execute.cpp
     core/src/frontend.cpp
     core/src/interrupt.cpp
+    core/src/mmu.cpp
     core/src/trap.cpp)
 
 target_include_directories(
@@ -289,6 +290,21 @@ if(RV32_BUILD_TESTS)
     add_test(
         NAME rv32_interrupt_tests
         COMMAND rv32_interrupt_tests)
+
+    add_executable(
+        rv32_mmu_tests
+        tests/mmu_tests.cpp)
+
+    target_link_libraries(
+        rv32_mmu_tests
+        PRIVATE
+            rv32_core)
+
+    rv32_enable_warnings(rv32_mmu_tests)
+
+    add_test(
+        NAME rv32_mmu_tests
+        COMMAND rv32_mmu_tests)
 
     if(RV32_BUILD_BAREMETAL_TESTS)
         find_program(

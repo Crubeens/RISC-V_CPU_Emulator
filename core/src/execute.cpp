@@ -1,5 +1,7 @@
 #include "rv32/core/execute.hpp"
 
+#include "rv32/core/mmu.hpp"
+
 namespace rv32 {
 
 namespace {
@@ -375,7 +377,8 @@ MemoryResult execute_memory(
     const DecodedInstruction& decoded,
     std::uint32_t pc,
     std::uint32_t rs1_value,
-    std::uint32_t rs2_value)
+    std::uint32_t rs2_value,
+    const CpuSnapshot* state)
 {
     const std::uint32_t address =
         rs1_value + decoded.immediate;
@@ -443,9 +446,33 @@ MemoryResult execute_memory(
             BusFault::Misaligned);
     }
 
+    PhysAddr physical_address = static_cast<PhysAddr>(address);
+    if (state != nullptr) {
+        const TranslationResult translation =
+            translate_address(
+                bus,
+                *state,
+                address,
+                is_load
+                    ? MemoryAccessType::Load
+                    : MemoryAccessType::Store);
+        if (!translation.ready()) {
+            return failure(
+                translation.status == TranslationStatus::PageFault
+                    ? (is_load
+                           ? MemoryStatus::LoadPageFault
+                           : MemoryStatus::StorePageFault)
+                    : (is_load
+                           ? MemoryStatus::LoadAccessFault
+                           : MemoryStatus::StoreAccessFault),
+                translation.bus_fault);
+        }
+        physical_address = translation.physical_address;
+    }
+
     if (is_load) {
         const ReadResult read_result = bus.read(
-            static_cast<PhysAddr>(address),
+            physical_address,
             width,
             AccessKind::Load);
         if (!read_result.ok()) {
@@ -500,7 +527,7 @@ MemoryResult execute_memory(
     }
 
     const BusFault write_fault = bus.write(
-        static_cast<PhysAddr>(address),
+        physical_address,
         width,
         rs2_value,
         AccessKind::Store);
@@ -532,7 +559,8 @@ AtomicExecutionResult execute_atomic(
     std::uint32_t pc,
     std::uint32_t hart_id,
     std::uint32_t rs1_value,
-    std::uint32_t rs2_value)
+    std::uint32_t rs2_value,
+    const CpuSnapshot* state)
 {
     const PendingCommit not_ready{
         .status = ExecuteStatus::UnsupportedInstruction,
@@ -637,7 +665,29 @@ AtomicExecutionResult execute_atomic(
             BusFault::Misaligned);
     }
 
-    const PhysAddr address = static_cast<PhysAddr>(rs1_value);
+    PhysAddr address = static_cast<PhysAddr>(rs1_value);
+    if (state != nullptr) {
+        const TranslationResult translation =
+            translate_address(
+                bus,
+                *state,
+                rs1_value,
+                is_load_reserved
+                    ? MemoryAccessType::Load
+                    : MemoryAccessType::Store);
+        if (!translation.ready()) {
+            return failure(
+                translation.status == TranslationStatus::PageFault
+                    ? (is_load_reserved
+                           ? AtomicStatus::LoadPageFault
+                           : AtomicStatus::StorePageFault)
+                    : (is_load_reserved
+                           ? AtomicStatus::LoadAccessFault
+                           : AtomicStatus::StoreAccessFault),
+                translation.bus_fault);
+        }
+        address = translation.physical_address;
+    }
     if (is_load_reserved) {
         const ReadResult result =
             bus.load_reserved_word(hart_id, address);
@@ -862,6 +912,10 @@ bool commit_pending(
         csr_access->write_validated(
             pending.csr_write.address,
             pending.csr_write.value);
+    }
+    if (pending.privilege_write.enabled &&
+        pending.privilege_write.value != PrivilegeMode::Machine) {
+        state.machine_csrs.mstatus &= ~mstatus_bits::mprv;
     }
     return true;
 }

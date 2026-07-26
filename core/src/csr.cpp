@@ -1,6 +1,7 @@
 #include "rv32/core/csr.hpp"
 
 #include "rv32/core/interrupt.hpp"
+#include "rv32/core/mmu.hpp"
 
 namespace rv32 {
 
@@ -131,6 +132,17 @@ namespace {
     return static_cast<std::uint32_t>(value >> 32U);
 }
 
+[[nodiscard]] bool satp_access_trapped(
+    const CpuSnapshot& state,
+    CsrAddress address,
+    PrivilegeMode privilege) noexcept
+{
+    return
+        address == csr_address::satp &&
+        privilege == PrivilegeMode::Supervisor &&
+        (state.machine_csrs.mstatus & mstatus_bits::tvm) != 0U;
+}
+
 } // namespace
 
 std::uint32_t sanitize_mstatus(std::uint32_t value) noexcept
@@ -165,6 +177,12 @@ CsrReadResult CsrFile::read(
     PrivilegeMode privilege) noexcept
 {
     if (!csr_privilege_allows(address, privilege)) {
+        return {
+            .status = CsrAccessStatus::PrivilegeViolation,
+            .value = 0,
+        };
+    }
+    if (satp_access_trapped(*state_, address, privilege)) {
         return {
             .status = CsrAccessStatus::PrivilegeViolation,
             .value = 0,
@@ -233,11 +251,9 @@ CsrReadResult CsrFile::read(
                 interrupt_bits::supervisor,
         };
     case csr_address::satp:
-        // Address translation starts in M4. Bare mode is the only legal
-        // value until Sv32 is implemented.
         return {
             .status = CsrAccessStatus::Ready,
-            .value = 0,
+            .value = state_->supervisor_csrs.satp,
         };
     case csr_address::mstatus:
         return {
@@ -368,6 +384,9 @@ CsrAccessStatus CsrFile::validate_write(
     if (!csr_privilege_allows(address, privilege)) {
         return CsrAccessStatus::PrivilegeViolation;
     }
+    if (satp_access_trapped(*state_, address, privilege)) {
+        return CsrAccessStatus::PrivilegeViolation;
+    }
     if (is_zicntr_address(address) ||
         is_machine_identity_address(address)) {
         return CsrAccessStatus::ReadOnly;
@@ -428,7 +447,7 @@ void CsrFile::write_validated(
         break;
     }
     case csr_address::satp:
-        // WARL: Sv32 is not implemented yet, so every write becomes Bare.
+        state_->supervisor_csrs.satp = sanitize_satp(value);
         break;
     case csr_address::mstatus:
         state_->machine_csrs.mstatus = sanitize_mstatus(value);

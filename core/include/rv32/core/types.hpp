@@ -53,6 +53,7 @@ struct SupervisorCsrState {
     std::uint32_t sepc{};
     std::uint32_t scause{};
     std::uint32_t stval{};
+    std::uint32_t satp{};
 
     [[nodiscard]] constexpr bool operator==(
         const SupervisorCsrState&) const noexcept = default;
@@ -85,6 +86,9 @@ enum class StepStatus : std::uint8_t {
     LoadAccessFault,
     StoreAddressMisaligned,
     StoreAccessFault,
+    InstructionPageFault,
+    LoadPageFault,
+    StorePageFault,
     TrapTaken,
     WaitingForInterrupt,
     CoreNotImplemented,

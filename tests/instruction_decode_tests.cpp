@@ -390,6 +390,8 @@ void test_legal_instructions()
          Kind::Sret, 0U, 0U, 0U, 0U},
         {"WFI", 0x10500073U,
          Kind::Wfi, 0U, 0U, 0U, 0U},
+        {"SFENCE.VMA", encode_r(0x09U, 7U, 6U, 0U, 0U, 0x73U),
+         Kind::SfenceVma, 0U, 6U, 7U, 0U},
     };
 
     for (const auto& test_case : cases) {
@@ -424,6 +426,9 @@ void test_illegal_instructions()
     check_illegal(
         "alternate funct7 only valid for SUB and SRA",
         encode_r(0x20U, 2U, 1U, 1U, 1U, 0x33U));
+    check_illegal(
+        "SFENCE.VMA requires rd=x0",
+        encode_r(0x09U, 2U, 1U, 0U, 1U, 0x73U));
     check_illegal(
         "LR.W requires rs2 to be x0",
         encode_a(0x02U, false, false, 2U, 1U, 1U));

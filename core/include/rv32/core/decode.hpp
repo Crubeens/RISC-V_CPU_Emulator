@@ -75,6 +75,7 @@ enum class InstructionKind : std::uint8_t {
     Mret,
     Sret,
     Wfi,
+    SfenceVma,
 };
 
 struct InstructionFields {

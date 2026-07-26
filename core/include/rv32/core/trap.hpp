@@ -20,6 +20,9 @@ enum class ExceptionCause : std::uint32_t {
     EnvironmentCallFromUser = 8,
     EnvironmentCallFromSupervisor = 9,
     EnvironmentCallFromMachine = 11,
+    InstructionPageFault = 12,
+    LoadPageFault = 13,
+    StorePageFault = 15,
 };
 
 enum class InterruptCause : std::uint32_t {

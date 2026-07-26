@@ -71,8 +71,10 @@ enum class MemoryStatus : std::uint8_t {
     NotMemoryInstruction,
     LoadAddressMisaligned,
     LoadAccessFault,
+    LoadPageFault,
     StoreAddressMisaligned,
     StoreAccessFault,
+    StorePageFault,
 };
 
 struct MemoryResult {
@@ -92,8 +94,10 @@ enum class AtomicStatus : std::uint8_t {
     NotAtomicInstruction,
     LoadAddressMisaligned,
     LoadAccessFault,
+    LoadPageFault,
     StoreAddressMisaligned,
     StoreAccessFault,
+    StorePageFault,
 };
 
 struct AtomicExecutionResult {
@@ -150,7 +154,8 @@ struct CsrExecutionResult {
     const DecodedInstruction& decoded,
     std::uint32_t pc,
     std::uint32_t rs1_value,
-    std::uint32_t rs2_value);
+    std::uint32_t rs2_value,
+    const CpuSnapshot* state = nullptr);
 
 // Executes RV32A word atomics only through CpuBus. The synchronous, in-order
 // core already serializes memory accesses, while acquire/release bits remain
@@ -161,7 +166,8 @@ struct CsrExecutionResult {
     std::uint32_t pc,
     std::uint32_t hart_id,
     std::uint32_t rs1_value,
-    std::uint32_t rs2_value);
+    std::uint32_t rs2_value,
+    const CpuSnapshot* state = nullptr);
 
 // Executes all six Zicsr instruction forms against an abstract CSR file.
 // Writes are validated here but deferred into PendingCommit for precise state

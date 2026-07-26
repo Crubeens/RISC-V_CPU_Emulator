@@ -1,10 +1,13 @@
 #include "rv32/core/frontend.hpp"
 
+#include "rv32/core/mmu.hpp"
+
 namespace rv32 {
 
 FrontendResult fetch_decode(
     CpuBus& bus,
-    std::uint32_t pc)
+    std::uint32_t pc,
+    const CpuSnapshot* state)
 {
     // RV32I without the C extension uses IALIGN=32: the PC must be aligned
     // to a four-byte instruction boundary.
@@ -19,8 +22,32 @@ FrontendResult fetch_decode(
         };
     }
 
+    PhysAddr physical_address = static_cast<PhysAddr>(pc);
+    if (state != nullptr) {
+        const TranslationResult translation =
+            translate_address(
+                bus,
+                *state,
+                pc,
+                MemoryAccessType::InstructionFetch);
+        if (!translation.ready()) {
+            return {
+                .status =
+                    translation.status == TranslationStatus::PageFault
+                        ? FrontendStatus::InstructionPageFault
+                        : FrontendStatus::InstructionAccessFault,
+                .pc = pc,
+                .instruction = 0,
+                .decoded = {},
+                .bus_fault = translation.bus_fault,
+                .trap_value = pc,
+            };
+        }
+        physical_address = translation.physical_address;
+    }
+
     const ReadResult read_result = bus.read(
-        static_cast<PhysAddr>(pc),
+        physical_address,
         AccessWidth::Word,
         AccessKind::InstructionFetch);
 

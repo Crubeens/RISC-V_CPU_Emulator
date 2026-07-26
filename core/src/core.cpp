@@ -69,7 +69,7 @@ StepResult Core::step(const IrqLines& irq_lines)
     CsrFile csr_file(state_, *bus_);
 
     const FrontendResult frontend_result =
-        fetch_decode(*bus_, state_.pc);
+        fetch_decode(*bus_, state_.pc, &state_);
     const auto trap =
         [&](ExceptionCause cause,
             std::uint32_t trap_value,
@@ -100,6 +100,11 @@ StepResult Core::step(const IrqLines& irq_lines)
     case FrontendStatus::InstructionAccessFault:
         return trap(
             ExceptionCause::InstructionAccessFault,
+            frontend_result.trap_value,
+            frontend_result.bus_fault);
+    case FrontendStatus::InstructionPageFault:
+        return trap(
+            ExceptionCause::InstructionPageFault,
             frontend_result.trap_value,
             frontend_result.bus_fault);
     case FrontendStatus::InstructionAddressMisaligned:
@@ -186,7 +191,8 @@ StepResult Core::step(const IrqLines& irq_lines)
                 frontend_result.pc,
                 state_.hart_id,
                 rs1_value,
-                rs2_value);
+                rs2_value,
+                &state_);
 
         switch (atomic_result.status) {
         case AtomicStatus::Ready:
@@ -202,6 +208,11 @@ StepResult Core::step(const IrqLines& irq_lines)
                 ExceptionCause::LoadAccessFault,
                 atomic_result.trap_value,
                 atomic_result.bus_fault);
+        case AtomicStatus::LoadPageFault:
+            return trap(
+                ExceptionCause::LoadPageFault,
+                atomic_result.trap_value,
+                atomic_result.bus_fault);
         case AtomicStatus::StoreAddressMisaligned:
             return trap(
                 ExceptionCause::StoreAddressMisaligned,
@@ -210,6 +221,11 @@ StepResult Core::step(const IrqLines& irq_lines)
         case AtomicStatus::StoreAccessFault:
             return trap(
                 ExceptionCause::StoreAccessFault,
+                atomic_result.trap_value,
+                atomic_result.bus_fault);
+        case AtomicStatus::StorePageFault:
+            return trap(
+                ExceptionCause::StorePageFault,
                 atomic_result.trap_value,
                 atomic_result.bus_fault);
         case AtomicStatus::NotAtomicInstruction:
@@ -245,7 +261,8 @@ StepResult Core::step(const IrqLines& irq_lines)
             frontend_result.decoded,
             frontend_result.pc,
             rs1_value,
-            rs2_value);
+            rs2_value,
+            &state_);
 
         switch (memory_result.status) {
         case MemoryStatus::Ready:
@@ -261,6 +278,11 @@ StepResult Core::step(const IrqLines& irq_lines)
                 ExceptionCause::LoadAccessFault,
                 memory_result.trap_value,
                 memory_result.bus_fault);
+        case MemoryStatus::LoadPageFault:
+            return trap(
+                ExceptionCause::LoadPageFault,
+                memory_result.trap_value,
+                memory_result.bus_fault);
         case MemoryStatus::StoreAddressMisaligned:
             return trap(
                 ExceptionCause::StoreAddressMisaligned,
@@ -269,6 +291,11 @@ StepResult Core::step(const IrqLines& irq_lines)
         case MemoryStatus::StoreAccessFault:
             return trap(
                 ExceptionCause::StoreAccessFault,
+                memory_result.trap_value,
+                memory_result.bus_fault);
+        case MemoryStatus::StorePageFault:
+            return trap(
+                ExceptionCause::StorePageFault,
                 memory_result.trap_value,
                 memory_result.bus_fault);
         case MemoryStatus::NotMemoryInstruction:

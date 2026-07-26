@@ -233,7 +233,8 @@ PrivilegedExecutionResult execute_privileged(
 
     if (decoded.kind != InstructionKind::Mret &&
         decoded.kind != InstructionKind::Sret &&
-        decoded.kind != InstructionKind::Wfi) {
+        decoded.kind != InstructionKind::Wfi &&
+        decoded.kind != InstructionKind::SfenceVma) {
         return {
             .status =
                 PrivilegedExecutionStatus::NotPrivilegedInstruction,
@@ -244,6 +245,32 @@ PrivilegedExecutionResult execute_privileged(
 
     const std::uint32_t old_mstatus =
         sanitize_mstatus(state.machine_csrs.mstatus);
+    if (decoded.kind == InstructionKind::SfenceVma) {
+        if (state.privilege == PrivilegeMode::User ||
+            (state.privilege == PrivilegeMode::Supervisor &&
+             (old_mstatus & mstatus_bits::tvm) != 0U)) {
+            return {
+                .status =
+                    PrivilegedExecutionStatus::IllegalInstruction,
+                .pending = not_ready,
+                .trap_value = decoded.raw,
+            };
+        }
+
+        // M4 intentionally has no TLB. A fresh walk is performed for every
+        // translated access, so retiring the fence is sufficient to provide
+        // its local ordering and invalidation semantics.
+        return {
+            .status = PrivilegedExecutionStatus::Ready,
+            .pending = {
+                .status = ExecuteStatus::Ready,
+                .pc = state.pc,
+                .instruction = decoded.raw,
+                .next_pc = state.pc + 4U,
+            },
+            .trap_value = 0,
+        };
+    }
     if (decoded.kind == InstructionKind::Wfi) {
         // This implementation provides WFI to M/S modes. U-mode WFI is the
         // optional form and is intentionally not implemented.
@@ -304,6 +331,9 @@ PrivilegedExecutionResult execute_privileged(
             new_mstatus |= mstatus_bits::mie;
         }
         new_mstatus |= mstatus_bits::mpie;
+        if (return_privilege != PrivilegeMode::Machine) {
+            new_mstatus &= ~mstatus_bits::mprv;
+        }
 
         return {
             .status = PrivilegedExecutionStatus::Ready,
@@ -348,6 +378,7 @@ PrivilegedExecutionResult execute_privileged(
         new_mstatus |= mstatus_bits::sie;
     }
     new_mstatus |= mstatus_bits::spie;
+    new_mstatus &= ~mstatus_bits::mprv;
 
     return {
         .status = PrivilegedExecutionStatus::Ready,

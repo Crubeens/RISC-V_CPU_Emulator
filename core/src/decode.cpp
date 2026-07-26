@@ -509,6 +509,14 @@ DecodedInstruction decode_instruction(
                 instruction,
                 InstructionKind::Wfi);
         }
+        if ((instruction & 0xFE007FFFU) == 0x12000073U) {
+            return make_decoded(
+                instruction,
+                InstructionKind::SfenceVma,
+                0,
+                fields.rs1,
+                fields.rs2);
+        }
         switch (fields.funct3) {
         case 0x1U:
             return make_csr(InstructionKind::Csrrw, false);
