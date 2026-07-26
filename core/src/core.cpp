@@ -21,6 +21,8 @@ void Core::reset(const ResetConfig& config)
     state_.pc = config.reset_pc;
     state_.hart_id = config.hart_id;
     state_.privilege = config.initial_privilege;
+    state_.registers[10] = config.hart_id;
+    state_.registers[11] = config.boot_argument;
     state_.registers[0] = 0;
     sampled_irq_lines_ = {};
 }

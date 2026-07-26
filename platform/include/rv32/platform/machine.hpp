@@ -2,10 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "rv32/core/core.hpp"
 #include "rv32/platform/address_map.hpp"
+#include "rv32/platform/boot.hpp"
 #include "rv32/platform/system_bus.hpp"
 
 namespace rv32::devices {
@@ -40,6 +42,11 @@ class Machine {
     Machine& operator=(Machine&&) = delete;
 
     void reset(const ResetConfig& config = {});
+    [[nodiscard]] BusFault load_image(
+        std::span<const std::uint8_t> image,
+        PhysAddr physical_address) noexcept;
+    [[nodiscard]] BootResult load_boot(
+        const BootConfig& config) noexcept;
     [[nodiscard]] StepResult step(std::uint64_t elapsed_cycles = 1);
 
     [[nodiscard]] Core& core() noexcept;

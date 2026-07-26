@@ -26,6 +26,9 @@ struct ResetConfig {
     std::uint32_t reset_pc{0x80000000U};
     std::uint32_t hart_id{};
     PrivilegeMode initial_privilege{PrivilegeMode::Machine};
+    // RISC-V boot convention: a0 receives hart_id and a1 receives this
+    // platform-defined opaque argument (the DTB address for M5).
+    std::uint32_t boot_argument{};
 };
 
 struct MachineCsrState {

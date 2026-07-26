@@ -1,4 +1,5 @@
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 
@@ -195,6 +196,30 @@ class ProgramBus final : public rv32::CpuBus {
         return 0;
     }
 };
+
+void test_reset_initializes_boot_arguments()
+{
+    ProgramBus bus;
+    rv32::Core core(bus);
+    core.reset({
+        .reset_pc = ProgramBus::base + 0x100U,
+        .hart_id = 7U,
+        .initial_privilege = rv32::PrivilegeMode::Machine,
+        .boot_argument = 0x83FFF000U,
+    });
+
+    const auto state = core.snapshot();
+    CHECK(state.pc == ProgramBus::base + 0x100U);
+    CHECK(state.hart_id == 7U);
+    CHECK(state.registers[0] == 0U);
+    CHECK(state.registers[10] == state.hart_id);
+    CHECK(state.registers[11] == 0x83FFF000U);
+    for (std::size_t index = 1; index < state.registers.size(); ++index) {
+        if (index != 10U && index != 11U) {
+            CHECK(state.registers[index] == 0U);
+        }
+    }
+}
 
 void check_precise_machine_trap(
     const rv32::CpuSnapshot& after,
@@ -723,6 +748,7 @@ void test_ecall_and_ebreak_are_precise_events()
 
 int main()
 {
+    test_reset_initializes_boot_arguments();
     test_register_values_flow_through_complete_steps();
     test_m_extension_flows_through_complete_steps();
     test_misaligned_pc_does_not_change_state();

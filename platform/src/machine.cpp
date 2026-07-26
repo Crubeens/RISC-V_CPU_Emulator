@@ -1,5 +1,7 @@
 #include "rv32/platform/machine.hpp"
 
+#include <limits>
+
 #include "rv32/devices/clint.hpp"
 #include "rv32/devices/framebuffer.hpp"
 #include "rv32/devices/plic.hpp"
@@ -58,6 +60,104 @@ void Machine::reset(const ResetConfig& config)
 {
     irq_lines_ = {};
     core_.reset(config);
+}
+
+BusFault Machine::load_image(
+    std::span<const std::uint8_t> image,
+    PhysAddr physical_address) noexcept
+{
+    if (physical_address < address_map::dram_base) {
+        return BusFault::OutOfRange;
+    }
+
+    const std::uint64_t offset =
+        physical_address - address_map::dram_base;
+    return ram_->load_image(image, offset);
+}
+
+BootResult Machine::load_boot(const BootConfig& config) noexcept
+{
+    BootResult result;
+    if (config.firmware.empty()) {
+        result.error = BootError::MissingFirmware;
+        return result;
+    }
+    if (config.kernel.empty()) {
+        result.error = BootError::MissingKernel;
+        return result;
+    }
+    if (config.device_tree.empty()) {
+        result.error = BootError::MissingDeviceTree;
+        return result;
+    }
+
+    const auto ram_range = ram_->range();
+    const auto firmware_size =
+        static_cast<std::uint64_t>(config.firmware.size());
+    const auto kernel_size =
+        static_cast<std::uint64_t>(config.kernel.size());
+    const auto device_tree_size =
+        static_cast<std::uint64_t>(config.device_tree.size());
+
+    if (ram_range.size < kernel_load_offset ||
+        device_tree_size > ram_range.size ||
+        device_tree_firmware_padding >
+            ram_range.size - device_tree_size) {
+        result.error = BootError::RamTooSmall;
+        return result;
+    }
+    if (firmware_size > kernel_load_offset) {
+        result.error = BootError::ImagesOverlap;
+        return result;
+    }
+
+    const std::uint64_t device_tree_offset =
+        ((ram_range.size -
+          device_tree_size -
+          device_tree_firmware_padding) /
+         device_tree_alignment) *
+        device_tree_alignment;
+    if (device_tree_offset < kernel_load_offset ||
+        kernel_size >
+            device_tree_offset - kernel_load_offset) {
+        result.error = BootError::ImagesOverlap;
+        return result;
+    }
+
+    result.layout.device_tree_address =
+        ram_range.base + device_tree_offset;
+    if (result.layout.firmware_address >
+            std::numeric_limits<std::uint32_t>::max() ||
+        result.layout.kernel_address >
+            std::numeric_limits<std::uint32_t>::max() ||
+        result.layout.device_tree_address >
+            std::numeric_limits<std::uint32_t>::max()) {
+        result.error = BootError::AddressOutOfRange;
+        return result;
+    }
+
+    if (load_image(
+            config.firmware,
+            result.layout.firmware_address) != BusFault::None ||
+        load_image(
+            config.kernel,
+            result.layout.kernel_address) != BusFault::None ||
+        load_image(
+            config.device_tree,
+            result.layout.device_tree_address) != BusFault::None) {
+        result.error = BootError::ImageLoadFailed;
+        return result;
+    }
+
+    reset({
+        .reset_pc = static_cast<std::uint32_t>(
+            result.layout.firmware_address),
+        .hart_id = config.hart_id,
+        .initial_privilege = PrivilegeMode::Machine,
+        .boot_argument = static_cast<std::uint32_t>(
+            result.layout.device_tree_address),
+    });
+    return result;
 }
 
 StepResult Machine::step(std::uint64_t elapsed_cycles)

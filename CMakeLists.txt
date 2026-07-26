@@ -16,6 +16,47 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_program(
+    RV32_DTC
+    NAMES dtc
+    HINTS
+        "C:/msys64/ucrt64/bin")
+if(NOT RV32_DTC)
+    message(
+        FATAL_ERROR
+        "M5 requires the Device Tree Compiler (dtc)")
+endif()
+
+set(
+    RV32_GENERATED_IMAGE_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/images")
+set(
+    RV32_VIRT_DTB
+    "${RV32_GENERATED_IMAGE_DIR}/rv32-virt.dtb")
+
+add_custom_command(
+    OUTPUT
+        "${RV32_VIRT_DTB}"
+    COMMAND
+        ${CMAKE_COMMAND} -E make_directory
+        "${RV32_GENERATED_IMAGE_DIR}"
+    COMMAND
+        "${RV32_DTC}"
+        -I dts
+        -O dtb
+        -o
+        "${RV32_VIRT_DTB}"
+        "${PROJECT_SOURCE_DIR}/platform/dts/rv32-virt.dts"
+    DEPENDS
+        platform/dts/rv32-virt.dts
+    VERBATIM)
+
+add_custom_target(
+    rv32_device_tree
+    ALL
+    DEPENDS
+        "${RV32_VIRT_DTB}")
+
 function(rv32_enable_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive-)
@@ -77,13 +118,34 @@ add_executable(
 
 target_link_libraries(rv32_emulator PRIVATE rv32_platform)
 rv32_enable_warnings(rv32_emulator)
+add_dependencies(rv32_emulator rv32_device_tree)
 
 if(RV32_BUILD_TESTS)
     enable_testing()
 
+    find_program(
+        RV32_FDTGET
+        NAMES fdtget
+        HINTS
+            "C:/msys64/ucrt64/bin")
+    if(NOT RV32_FDTGET)
+        message(
+            FATAL_ERROR
+            "M5 tests require fdtget")
+    endif()
+
     add_test(
         NAME rv32_emulator_smoke
         COMMAND rv32_emulator)
+
+    add_test(
+        NAME rv32_device_tree_smoke
+        COMMAND
+            ${CMAKE_COMMAND}
+            "-DDTB=${RV32_VIRT_DTB}"
+            "-DFDTGET=${RV32_FDTGET}"
+            -P
+            "${PROJECT_SOURCE_DIR}/tests/cmake/verify_device_tree.cmake")
 
     add_executable(
         rv32_framework_tests
@@ -333,6 +395,12 @@ if(RV32_BUILD_TESTS)
         set(
             RV32_BAREMETAL_BIN
             "${RV32_BAREMETAL_OUTPUT_DIR}/smoke.bin")
+        set(
+            RV32_BOOT_SMOKE_ELF
+            "${RV32_BAREMETAL_OUTPUT_DIR}/boot_console.elf")
+        set(
+            RV32_BOOT_SMOKE_BIN
+            "${RV32_BAREMETAL_OUTPUT_DIR}/boot_console.bin")
 
         add_custom_command(
             OUTPUT
@@ -380,6 +448,42 @@ if(RV32_BUILD_TESTS)
             DEPENDS
                 "${RV32_BAREMETAL_BIN}")
 
+        add_custom_command(
+            OUTPUT
+                "${RV32_BOOT_SMOKE_BIN}"
+            BYPRODUCTS
+                "${RV32_BOOT_SMOKE_ELF}"
+            COMMAND
+                ${CMAKE_COMMAND} -E make_directory
+                "${RV32_BAREMETAL_OUTPUT_DIR}"
+            COMMAND
+                "${RV32_BAREMETAL_GCC}"
+                -march=rv32i
+                -mabi=ilp32
+                -nostdlib
+                -nostartfiles
+                "-Wl,-T,${PROJECT_SOURCE_DIR}/tests/baremetal/link.ld"
+                -Wl,--no-relax
+                -o
+                "${RV32_BOOT_SMOKE_ELF}"
+                "${PROJECT_SOURCE_DIR}/tests/boot/console_shutdown.S"
+            COMMAND
+                "${RV32_BAREMETAL_OBJCOPY}"
+                -O
+                binary
+                "${RV32_BOOT_SMOKE_ELF}"
+                "${RV32_BOOT_SMOKE_BIN}"
+            DEPENDS
+                tests/baremetal/link.ld
+                tests/boot/console_shutdown.S
+            VERBATIM)
+
+        add_custom_target(
+            rv32_boot_smoke_image
+            ALL
+            DEPENDS
+                "${RV32_BOOT_SMOKE_BIN}")
+
         add_executable(
             rv32_baremetal_runner
             tests/baremetal/runner.cpp)
@@ -393,11 +497,38 @@ if(RV32_BUILD_TESTS)
         add_dependencies(
             rv32_baremetal_runner
             rv32_baremetal_image)
+        add_dependencies(
+            rv32_emulator
+            rv32_baremetal_image
+            rv32_boot_smoke_image)
 
         add_test(
             NAME rv32_baremetal_smoke
             COMMAND
                 rv32_baremetal_runner
                 "${RV32_BAREMETAL_BIN}")
+
+        add_test(
+            NAME rv32_boot_image_loader_smoke
+            COMMAND
+                rv32_emulator
+                --load-images
+                "${RV32_BAREMETAL_BIN}"
+                "${RV32_BAREMETAL_BIN}"
+                "${RV32_VIRT_DTB}")
+
+        add_test(
+            NAME rv32_boot_run_smoke
+            COMMAND
+                rv32_emulator
+                --boot
+                "${RV32_BOOT_SMOKE_BIN}"
+                "${RV32_BAREMETAL_BIN}"
+                "${RV32_VIRT_DTB}"
+                100)
+        set_tests_properties(
+            rv32_boot_run_smoke
+            PROPERTIES
+                PASS_REGULAR_EXPRESSION "OK")
     endif()
 endif()
