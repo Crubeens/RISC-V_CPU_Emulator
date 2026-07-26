@@ -1,0 +1,18 @@
+1、srai，srli采用高7位hi与低5位位移数值拼接而成立即数imm+funct3来区别。
+2、执行地址跳转类指令时指令地址统一需要2字节对齐，存储时末尾的0省略。
+3、rs1表示提供基地址的寄存器，rs2表示提供数据的寄存器。
+4、jal x0,label就是j label(伪指令)，因为x0是机器0，规定写它无效但语法成立。
+
+
+
+PLIC 完成协议不正确
+[plic.cpp (line 257)](C:/Users/Lenovo/Desktop/files/RISC-V_CPU_Emulator/devices/src/plic.cpp:257) 强制完成 ID 必须等于该上下文最后一次 claim，并且没有检查该源是否仍对上下文启用。官方规范明确规定不能用“最后一次 claim ID”进行这种检查。连续 claim 两个中断后，第一个中断将无法完成。PLIC Completion 规范
+
+VirtIO 在 DRIVER_OK 前也会处理队列
+[virtio_block.cpp (line 199)](C:/Users/Lenovo/Desktop/files/RISC-V_CPU_Emulator/devices/src/virtio_block.cpp:199) 只检查队列是否配置，没有在 tick() 中检查 device_status_。状态为 0 时发送通知仍会访问描述符、修改 Used Ring 并产生中断；VirtIO 规范禁止在 DRIVER_OK 前消费缓冲区。
+
+Legacy VirtIO Available Ring 大小少算 2 字节
+[virtio_block.cpp (line 297)](C:/Users/Lenovo/Desktop/files/RISC-V_CPU_Emulator/devices/src/virtio_block.cpp:297) 使用 4 + 2 * queue_num，规范布局应为 6 + 2 * queue_num。例如队列大小为 2、对齐为 4 时，Used Ring 会被定位到错误地址。VirtIO 1.2 规范
+
+Framebuffer 尺寸乘法可能溢出
+[framebuffer.cpp (line 24)](C:/Users/Lenovo/Desktop/files/RISC-V_CPU_Emulator/devices/src/framebuffer.cpp:24) 在检查前直接计算 width × height × bytes_per_pixel。例如 width=0x80000000、height=4、bytes_per_pixel=0x80000000 会在 uint64_t 中回绕为 0，使构造结果与输入不符。

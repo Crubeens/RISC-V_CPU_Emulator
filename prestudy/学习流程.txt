@@ -1,0 +1,388 @@
+RISC-V CPU 模拟器前置学习流程
+
+目标
+完成本流程后，能够开始用 C++ 编写一个最简单的 RV32I 指令解释器。
+暂时不要学习 Linux 启动、OpenSBI、虚拟内存、PLIC、VirtIO、流水线和 JIT。
+
+第 1 步：补齐 C++ 基础
+学习内容：整数类型、位运算、数组、函数、引用、类、std::array、std::vector、文件读取。
+必须会写：取一个整数的指定位段；设置和清除某一位；读取二进制文件。
+验收：能独立写出 get_bits(value, high, low) 和符号扩展函数。
+参考：https://www.learncpp.com/
+
+第 2 步：理解二进制和补码
+学习内容：十六进制、大小端、无符号数、有符号补码、溢出、逻辑移位、算术移位、符号扩展。
+验收：能手算 8 位补码的加减法，并解释 0xFFFFFFF0 作为 int32_t 的值。
+参考：https://www.icourse163.org/course/NJU-1001625001
+
+第 3 步：理解最小计算机结构
+只掌握：PC、寄存器堆、ALU、内存、指令、时钟的作用。
+理解一条指令的过程：PC 取指令 -> 译码 -> 读寄存器 -> 运算/访存 -> 写回 -> 更新 PC。
+验收：能用自己的话解释 ADD、LW、SW、BEQ 各自经过哪些步骤。
+参考：南京大学“计算机系统基础（上）”
+https://www.icourse163.org/course/NJU-1001625001
+
+第 4 步：理解 C 程序如何变成机器指令
+学习内容：源文件、汇编、目标文件、链接、ELF、反汇编。
+会使用：riscv64-unknown-elf-gcc 和 riscv64-unknown-elf-objdump。
+验收：把一个简单 C 函数编译成 RISC-V 程序，并能在反汇编中找到 add、load、store、ret。
+参考：https://ysyx.oscc.cc/docs/2407/e/4.html
+
+第 5 步：只学习 RV32I 指令格式
+学习 R、I、S、B、U、J 六种格式，以及 opcode、rd、rs1、rs2、funct3、funct7、imm。
+先掌握：LUI、ADDI、ADD、SUB、LW、SW、BEQ、JAL、JALR。
+验收：给出一条 32 位机器码，能提取 opcode、寄存器编号和立即数。
+参考：https://riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf
+中文辅助：https://hastin-blog.cn/post/%E4%BB%8E0%E5%BC%80%E5%A7%8B%E7%9A%84RISC-V%E6%A8%A1%E6%8B%9F%E5%99%A8/
+
+第 6 步：完成一个纸面 CPU 练习
+任选一条 ADDI 指令，手工写出：初始 PC、机器码、译码字段、寄存器原值、运算结果、写回结果、新 PC。
+再对 LW、SW、BEQ 各做一次。
+验收：四条指令都能完整推演，且明确知道哪一步访问寄存器或内存。
+
+第 7 步：跟做最小模拟器教程
+阅读“从零开始，徒手写一个 RISC-V 模拟器（1）”，理解 CPU、内存、总线和执行循环。
+使用 C++ 重写示例结构，不必照搬 C 代码。
+验收：程序可以从内存取出一条 32 位指令，并正确增加 PC。
+教程：https://tinylab.org/tinyemu-introduction/
+
+第 8 步：进入正式模拟器开发
+第一个开发目标只包含：RV32I、固定大小 RAM、裸二进制加载、逐条解释执行和日志。
+验收目标：运行一个包含加法、循环和内存读写的裸机程序。
+南京大学 PA：https://ysyx.oscc.cc/docs/ics-pa/
+
+遇到以下情况时不要继续
+1. 不会位运算：返回第 1、2 步。
+2. 看不懂机器码字段：返回第 5 步。
+3. 分不清取指、译码、执行：返回第 3、6 步。
+4. 不知道程序如何被编译：返回第 4 步。
+
+前置学习完成标准
+能用 C++ 写出一个循环：根据 PC 从内存取出 32 位指令，译码并执行 ADDI、ADD、LW、SW、BEQ，然后更新寄存器、内存和 PC。
+
+
+============================================================
+正式开发阶段学习流程
+============================================================
+
+当前状态
+项目框架（M0）已经搭建完成，CPU、统一总线、机器平台和外设之间的边界已经预留。
+当前只进入 M1：完整实现 RV32I CPU 核心。
+在 M1 完成以前，不要提前实现 CSR、特权级、Sv32、OpenSBI、Linux、VirtIO 或图形界面。
+
+接下来立刻要做的四件事
+1. 阅读现有 CPU、总线和机器平台接口，画出一次取指和一次中断的调用路径。
+2. 整理完整 RV32I 指令表，不要边写代码边临时查指令。
+3. 先实现并测试位段提取、符号扩展和立即数解码。
+4. 然后实现纯译码器，最后才实现会改变 CPU 状态的执行逻辑。
+
+
+第 9 步：读懂当前项目框架和 CPU 边界
+重点阅读：
+core/include/rv32/core/core.hpp
+core/include/rv32/core/bus.hpp
+platform/include/rv32/platform/system_bus.hpp
+platform/src/machine.cpp
+tests/framework_tests.cpp
+
+需要理解两条路径：
+1. 取指/访存：Core -> CpuBus -> SystemBus -> RAM 或 MMIO 外设。
+2. 中断：CLINT/PLIC -> Machine -> Core 的中断输入接口。
+
+必须理解：
+1. CPU 只依赖抽象总线接口，不直接包含 UART、PLIC、VirtIO 等外设。
+2. CPU 不主动推进外设时间；机器平台负责统一调用 tick。
+3. CPU 对外只暴露复位、单步执行、运行状态、中断输入和调试状态等接口。
+4. 将来替换外设实现时，不应修改 CPU 的指令执行代码。
+
+练习：
+画一张调用图，分别说明“读取一条 RAM 指令”和“收到一个定时器中断”经过哪些对象。
+
+验收：
+能够解释为什么 Core 中不能 include 具体外设头文件，也能指出将来 CPU 发起 8/16/32 位访问的位置。
+
+
+第 10 步：完整掌握 RV32I 指令集合
+按下面的分组学习，不允许只掌握示例中的几条指令。
+
+U 型：LUI、AUIPC。
+跳转：JAL、JALR。
+分支：BEQ、BNE、BLT、BGE、BLTU、BGEU。
+加载：LB、LH、LW、LBU、LHU。
+存储：SB、SH、SW。
+立即数运算：ADDI、SLTI、SLTIU、XORI、ORI、ANDI、SLLI、SRLI、SRAI。
+寄存器运算：ADD、SUB、SLL、SLT、SLTU、XOR、SRL、SRA、OR、AND。
+同步和环境：FENCE、ECALL、EBREAK。
+FENCE.I 属于 Zifencei 扩展，先认识其编码和作用，正式行为放到 M2。
+
+同时掌握：
+1. 每条指令的 opcode、funct3、funct7 和合法编码。
+2. R、I、S、B、U、J 六种立即数的拼接与符号扩展。
+3. x0 永远读出 0，任何对 x0 的写回都必须丢弃。
+4. RV32I 基础指令固定为 32 位，当前阶段 IALIGN=32。
+5. 未知编码、保留编码和非法移位编码不能被误当成合法指令。
+
+练习：
+建立自己的 RV32I 指令表。每行至少包含：
+指令名、match/mask、操作数、立即数类型、是否读内存、是否写内存、是否写 rd、PC 如何变化。
+
+验收：
+随机给出一条 RV32I 机器码，能够判断其是否合法，并手工写出执行结果和新 PC。
+
+官方参考：
+https://docs.riscv.org/reference/isa/v20260120/unpriv/rv32.html
+https://docs.riscv.org/reference/isa/unpriv/unpriv-index.html
+
+
+第 11 步：掌握模拟器所需的 C++ 整数规则
+重点学习：
+1. uint32_t 的模 2^32 回绕行为。
+2. int32_t 与 uint32_t 的显式转换。
+3. 有符号比较与无符号比较的区别。
+4. 逻辑右移与算术右移的区别。
+5. C++ 中有符号溢出、非法移位和类型提升可能造成的未定义或错误行为。
+6. 用 uint64_t/int64_t 保存较宽的中间结果。
+7. 不能依赖宿主机器恰好是小端。
+
+建议先实现并单元测试：
+get_bits(value, high, low)
+sign_extend(value, width)
+decode_i_imm、decode_s_imm、decode_b_imm、decode_u_imm、decode_j_imm
+add_wrap32
+arithmetic_shift_right
+
+验收：
+边界输入（0、全 1、最高位为 1、移位 0/31 位）全部有测试，并在 Debug 和 Release 构建下结果一致。
+
+
+第 12 步：设计无副作用的译码器
+建议建立 DecodedInstruction 一类的中间结构，至少保存：
+操作类型、rd、rs1、rs2、立即数、访问宽度以及必要的控制标志。
+
+设计要求：
+1. 译码阶段只读取机器码，不修改 PC、寄存器或内存。
+2. 使用明确的 match/mask 或等价表驱动规则判断指令。
+3. 重叠编码必须按照规范区分。
+4. 非法编码返回明确的 illegal instruction 结果，不能静默执行。
+5. 译码器不认识 UART、PLIC、VirtIO 等设备。
+
+测试内容：
+1. 六种指令格式的字段和立即数。
+2. 每个 RV32I 指令族至少一个合法样例。
+3. 非法 opcode、非法 funct3/funct7、非法移位高位。
+4. 正立即数、负立即数和边界立即数。
+
+验收：
+译码测试不需要创建完整 Machine，也不产生任何总线访问。
+
+
+第 13 步：学习“执行后统一提交”
+一条指令建议分为：
+取指 -> 译码 -> 读取操作数 -> 计算结果/发起访存 -> 检查异常 -> 提交。
+
+可以设计 PendingCommit 或等价结构，暂存：
+next_pc、可选的 rd 写回、将来的 CSR 写回、访存结果和异常信息。
+
+必须保证：
+1. 指令成功时才提交 PC 和寄存器结果。
+2. 取指、加载或存储失败时，不留下半条指令的状态变化。
+3. x0 在每次提交后仍为 0。
+4. 一条 store 只能发生一次，MMIO 读写也不能因重试被重复触发。
+5. 当前 M1 可以先把异常报告为停止原因，但结构必须允许 M3 接入精确陷阱。
+
+验收：
+人为制造取指失败、加载失败和存储失败，确认 PC、rd 和内存状态符合预期。
+
+
+第 14 步：通过统一总线实现取指、加载和存储
+学习内容：
+1. RISC-V 小端字节序。
+2. 8/16/32 位访问的字节组合。
+3. LB/LH 的符号扩展和 LBU/LHU 的零扩展。
+4. SB/SH/SW 只修改目标字节。
+5. 地址越界、未映射地址和只读区域的访问错误。
+6. 指令地址和数据地址的对齐规则。
+7. RAM 访问与 MMIO 访问具有相同的 CPU 总线接口，但可能有不同副作用。
+
+特别注意：
+即使加载目标是 x0，CPU 仍然必须真正执行内存访问，因为该访问可能触发异常或 MMIO 副作用；只是最终丢弃写回。
+
+练习：
+为 LB、LBU、LH、LHU、LW、SB、SH、SW 编写正常、边界、未对齐和越界测试。
+
+验收：
+CPU 核心只调用 CpuBus，不通过指针直接访问 RAM，也不判断某个地址是不是某种具体外设。
+
+
+第 15 步：实现 PC、跳转和分支语义
+重点掌握：
+1. 普通指令默认 next_pc = pc + 4。
+2. JAL 写回 pc + 4，并跳到 pc + 符号扩展立即数。
+3. JALR 写回 pc + 4，目标为 rs1 + imm，并清除结果的最低位。
+4. BLT/BGE 使用有符号比较，BLTU/BGEU 使用无符号比较。
+5. 未采用的分支继续执行 pc + 4。
+6. 跳转目标或取指地址不满足当前 IALIGN 时如何报告错误。
+7. AUIPC 使用当前指令的 PC，而不是已经更新后的 PC。
+
+验收：
+能够运行前向分支、后向循环、函数调用、函数返回和嵌套调用测试。
+
+
+第 16 步：建立 RV32I 裸机程序测试流程
+学习内容：
+1. 编写最小启动汇编和链接脚本。
+2. 使用 -march=rv32i -mabi=ilp32 -nostdlib 交叉编译。
+3. 使用 objdump 查看反汇编，确认编译器没有生成尚未实现的扩展指令。
+4. 将 ELF 的可加载段或裸二进制装入约定的 RAM 地址。
+5. 使用 EBREAK、约定的退出地址或测试邮箱结束测试。
+6. 输出可比较的指令轨迹：PC、机器码、寄存器写回、内存访问和停止原因。
+
+第一个集成程序至少包含：
+算术运算、正负数比较、循环、函数调用、字节/半字/字加载存储以及条件分支。
+
+验收：
+一个自己编译的 RV32I 裸机 C/汇编程序能够从入口运行到预期出口，寄存器和内存结果完全正确。
+
+
+M1 学习和开发完成标准
+1. 完整 RV32I 指令均有实现，不是只实现能够跑某个样例的子集。
+2. 每条指令至少有正常测试和一个有意义的边界测试。
+3. 非法指令、总线失败、未对齐和越界情况有确定结果。
+4. x0、PC、符号扩展、有符号/无符号比较均经过专项测试。
+5. 能运行自己交叉编译的 RV32I 裸机程序。
+6. core 目录不依赖任何具体外设实现。
+7. Debug 和 Release 测试均通过后，才能进入 M2。
+
+
+============================================================
+后续里程碑需要学习的内容
+以下内容先保留为路线图，到达对应里程碑时再深入。
+============================================================
+
+第 17 步：M 扩展
+学习 MUL、MULH、MULHSU、MULHU、DIV、DIVU、REM、REMU。
+重点测试：乘法高 32 位、除数为 0、INT32_MIN / -1、有符号余数规则。
+实现时使用足够宽的中间类型，不依赖宿主语言的有符号溢出。
+
+
+第 18 步：A 扩展和原子访问
+学习 LR.W、SC.W、AMOSWAP.W、AMOADD.W、AMOXOR.W、AMOAND.W、AMOOR.W、AMOMIN/MAX.W 及无符号变体。
+理解 reservation、允许的 SC 失败、普通写入和设备 DMA 对 reservation 的失效，以及 aq/rl 的含义。
+利用现有总线原子访问和 reservation 失效接口，不在 CPU 中直接操作 RAM。
+
+
+第 19 步：Zicsr、Zifencei 和计数器
+学习 CSR 地址编码、最低特权级、只读 CSR 判定，以及 CSRRW/CSRRS/CSRRC 和立即数变体。
+理解 rd=x0 与 rs1/zimm=0 时是否真的读取或写入 CSR。
+学习 cycle、time、instret 计数器以及 FENCE.I 的可见性要求。
+先建立统一 CSR 访问层，再添加具体 CSR。
+
+
+第 20 步：M/S/U 特权级、异常和中断
+学习：
+mstatus/sstatus、misa、medeleg/mideleg、mie/sie、mip/sip、
+mtvec/stvec、mepc/sepc、mcause/scause、mtval/stval、mscratch/sscratch。
+
+掌握：
+1. 异常与中断的优先级。
+2. trap 进入时保存哪些状态。
+3. direct 和 vectored trap 向量。
+4. MRET、SRET、WFI。
+5. 异常委托和中断委托。
+6. 在指令边界采样中断，保持精确状态。
+
+验收：
+用小型裸机程序完成 M 模式异常处理、定时器中断、M 到 S 切换和 S 模式陷阱。
+
+官方参考：
+https://docs.riscv.org/reference/isa/priv/priv-intro.html
+
+
+第 21 步：Sv32 虚拟内存
+学习：
+satp、两级页表、4 KiB 页、4 MiB megapage、VPN/PPN、PTE 的 V/R/W/X/U/G/A/D 位。
+
+必须区分：
+1. instruction/load/store page fault。
+2. instruction/load/store access fault。
+3. 当前特权级、SUM、MXR、MPRV 对权限检查的影响。
+4. SFENCE.VMA 对地址翻译缓存的影响。
+
+第一版先实现无 TLB 的页表遍历器，正确后再缓存。
+验收：构造页表测试普通页、megapage、权限失败、无效 PTE、跨页访问和 A/D 位行为。
+
+官方参考：
+https://docs.riscv.org/reference/isa/priv/supervisor.html
+
+
+第 22 步：OpenSBI、SBI 和 Linux 启动协议
+理解启动链：
+复位进入 M 模式 -> OpenSBI 初始化 -> 通过 SBI 为 S 模式提供服务 -> Linux 内核启动。
+
+学习：
+1. Linux 启动时 a0、a1、satp 等寄存器约定。
+2. Device Tree Blob 的作用和内存地址。
+3. RV32 Linux 内核镜像的加载、入口和对齐要求。
+4. earlycon/串口如何输出第一段日志。
+5. OpenSBI 如何使用定时器、IPI、复位和控制台接口。
+
+验收：
+先启动一个最小 S 模式 payload，再启动 OpenSBI，最后再尝试 Linux。
+
+参考：
+https://docs.kernel.org/arch/riscv/boot.html
+https://opensbi.readthedocs.io/
+
+
+第 23 步：VirtIO Block 和 Linux 根文件系统
+学习：
+1. 现有框架采用的 legacy VirtIO MMIO 寄存器布局。
+2. descriptor table、available ring、used ring。
+3. guest 物理内存中的 DMA 读写和描述符链校验。
+4. block request 头、数据缓冲区、状态字节和中断确认。
+5. 虚拟磁盘镜像的创建、持久化、越界保护和只读模式。
+
+验收：
+先用自制驱动完成单扇区读写，再让 Linux 识别块设备并挂载根文件系统。
+
+官方参考：
+https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html
+
+
+第 24 步：C 扩展和图形界面
+C 扩展重点：
+16 位/32 位指令长度判断、IALIGN=16、压缩寄存器编码、压缩立即数、跳转地址和异常 PC。
+
+图形界面重点：
+framebuffer 的像素格式、分辨率、步长、刷新策略、输入事件和宿主窗口事件循环。
+GUI 只是宿主适配层，不得侵入 CPU 指令语义。
+
+验收：
+先运行 C 扩展裸机测试，再通过现有 framebuffer 接口显示测试图案，最后接入 Linux simple-framebuffer。
+
+
+第 25 步：差分测试、体系结构测试和优化
+学习：
+1. 使用指令提交轨迹与参考实现逐条比较。
+2. 使用 RISC-V Architecture Test 验证体系结构行为。
+3. 使用 Spike 辅助定位 PC、寄存器、内存和异常差异。
+4. 先保证解释器正确，再考虑 TLB、译码缓存、直接内存快路径或 JIT。
+
+参考：
+https://github.com/riscv/riscv-arch-test
+https://github.com/riscv-software-src/riscv-isa-sim
+
+
+开发期间的学习纪律
+1. 只深入学习当前里程碑需要的内容，避免同时展开所有主题。
+2. 每学一个规则，至少做一次手工推演和一个自动化测试。
+3. 规范是最终依据；博客和其他模拟器只作为辅助解释。
+4. 可以参考已有外设设计，但 CPU 指令语义必须自己理解并实现。
+5. 没有测试的指令不算完成。
+6. 每个里程碑必须先通过 Debug、Release 和集成测试，再提交并进入下一阶段。
+7. 遇到差异时先缩小为单条指令或单次访存，再检查整机启动日志。
+
+
+现在的学习起点
+从第 9 步开始。完成项目接口调用图后，立刻整理第 10 步的完整 RV32I 指令表。
+在指令表完成以前，不开始编写 execute 的大段 switch；先把第 11、12 步的基础工具和译码测试做好。

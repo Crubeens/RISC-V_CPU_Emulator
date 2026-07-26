@@ -1,0 +1,23 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "debug-ninja",
+      "displayName": "Debug - Ninja (MSYS2 UCRT64 GCC)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "C:/msys64/ucrt64/bin/gcc.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/msys64/ucrt64/bin/ninja.exe"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug-ninja",
+      "displayName": "Build Debug - Ninja",
+      "configurePreset": "debug-ninja"
+    }
+  ]
+}

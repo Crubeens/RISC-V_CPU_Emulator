@@ -1,0 +1,10 @@
+/build/
+/prestudy/rv32_cpu_base/build-ninja/
+/.cache/
+/.idea/
+**/.vscode/
+desktop.ini
+*.user
+*.suo
+*.swp
+*.log
