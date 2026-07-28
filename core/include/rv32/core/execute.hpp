@@ -4,6 +4,7 @@
 
 #include "rv32/core/csr.hpp"
 #include "rv32/core/decode.hpp"
+#include "rv32/core/mmu.hpp"
 #include "rv32/core/types.hpp"
 
 namespace rv32 {
@@ -155,7 +156,9 @@ struct CsrExecutionResult {
     std::uint32_t pc,
     std::uint32_t rs1_value,
     std::uint32_t rs2_value,
-    const CpuSnapshot* state = nullptr);
+    const CpuSnapshot* state = nullptr,
+    Sv32Tlb* tlb = nullptr,
+    MmuPerformanceCounters* mmu_counters = nullptr);
 
 // Executes RV32A word atomics only through CpuBus. The synchronous, in-order
 // core already serializes memory accesses, while acquire/release bits remain
@@ -167,7 +170,9 @@ struct CsrExecutionResult {
     std::uint32_t hart_id,
     std::uint32_t rs1_value,
     std::uint32_t rs2_value,
-    const CpuSnapshot* state = nullptr);
+    const CpuSnapshot* state = nullptr,
+    Sv32Tlb* tlb = nullptr,
+    MmuPerformanceCounters* mmu_counters = nullptr);
 
 // Executes all six Zicsr instruction forms against an abstract CSR file.
 // Writes are validated here but deferred into PendingCommit for precise state

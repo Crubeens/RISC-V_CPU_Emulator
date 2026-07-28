@@ -793,6 +793,42 @@ void test_ecall_and_ebreak_are_precise_events()
     }
 }
 
+void test_fast_and_reference_modes_and_counters()
+{
+    ProgramBus bus;
+    bus.words[0] = 0x00000013U;
+    bus.words[1] = 0x00000013U;
+    rv32::Core core(bus);
+
+    CHECK(core.execution_mode() == rv32::ExecutionMode::Fast);
+    CHECK(core.step({}).status == rv32::StepStatus::Retired);
+    CHECK(core.step({}).status == rv32::StepStatus::Retired);
+    const auto fast = core.performance_counters();
+    CHECK(fast.step_calls == 2U);
+    CHECK(fast.retired_instructions == 2U);
+    CHECK(fast.decode.misses == 1U);
+    CHECK(fast.decode.hits == 1U);
+    CHECK(core.decoded_entries() == 1U);
+
+    core.set_execution_mode(rv32::ExecutionMode::Reference);
+    core.reset();
+    CHECK(core.execution_mode() == rv32::ExecutionMode::Reference);
+    CHECK(core.step({}).status == rv32::StepStatus::Retired);
+    const auto reference = core.performance_counters();
+    CHECK(reference.step_calls == 1U);
+    CHECK(reference.retired_instructions == 1U);
+    CHECK(reference.decode.lookups == 0U);
+    CHECK(core.decoded_entries() == 0U);
+
+    core.set_execution_mode(rv32::ExecutionMode::Fast);
+    core.reset();
+    bus.words[0] = 0x0000100FU; // fence.i
+    CHECK(core.step({}).status == rv32::StepStatus::Retired);
+    CHECK(
+        core.performance_counters().decode.invalidations == 1U);
+    CHECK(core.decoded_entries() == 0U);
+}
+
 } // namespace
 
 int main()
@@ -811,6 +847,7 @@ int main()
     test_halfword_control_targets_are_accepted();
     test_fence_retires_through_complete_step();
     test_ecall_and_ebreak_are_precise_events();
+    test_fast_and_reference_modes_and_counters();
 
     if (failures == 0) {
         std::cout << "All RV32 Core::step tests passed\n";

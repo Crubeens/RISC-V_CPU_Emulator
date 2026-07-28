@@ -220,6 +220,11 @@ def main() -> int:
                         default=0x00100000)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument(
+        "--reference-dut",
+        action="store_true",
+        help="force the DUT architecture runner to use its reference path",
+    )
+    parser.add_argument(
         "--allow-spike-tail",
         action="store_true",
         help=(
@@ -242,10 +247,11 @@ def main() -> int:
     if missing:
         parser.error(f"missing required arguments: {', '.join(missing)}")
 
-    dut_output = run_command(
-        [str(args.dut), "--trace", str(args.binary)],
-        args.timeout,
-    )
+    dut_command = [str(args.dut), "--trace"]
+    if args.reference_dut:
+        dut_command.append("--reference")
+    dut_command.append(str(args.binary))
+    dut_output = run_command(dut_command, args.timeout)
     spike_output = run_command(
         [
             str(args.spike),

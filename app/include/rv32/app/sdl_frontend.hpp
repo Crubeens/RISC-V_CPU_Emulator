@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -13,6 +14,15 @@ namespace rv32::app {
 enum class DisplayView {
     Terminal,
     Framebuffer,
+};
+
+struct SdlPerformanceCounters {
+    std::uint64_t presented_frames{};
+    std::uint64_t deferred_updates{};
+    std::uint64_t full_texture_uploads{};
+    std::uint64_t partial_texture_uploads{};
+    std::uint64_t uploaded_bytes{};
+    std::uint64_t presentation_span_ms{};
 };
 
 class SdlFrontend {
@@ -29,6 +39,8 @@ class SdlFrontend {
     [[nodiscard]] bool active() const noexcept;
     [[nodiscard]] std::string_view error() const noexcept;
     [[nodiscard]] DisplayView view() const noexcept;
+    [[nodiscard]] const SdlPerformanceCounters&
+    performance_counters() const noexcept;
 
     void append_uart(std::string_view output);
     [[nodiscard]] std::string poll_input();

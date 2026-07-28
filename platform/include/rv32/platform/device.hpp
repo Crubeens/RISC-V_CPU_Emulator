@@ -76,6 +76,16 @@ class Device {
         AccessWidth width,
         std::uint64_t value) = 0;
 
+    [[nodiscard]] virtual bool needs_tick() const noexcept
+    {
+        return false;
+    }
+
+    [[nodiscard]] virtual bool instruction_cacheable() const noexcept
+    {
+        return false;
+    }
+
     virtual void tick(DmaAccess& dma, std::uint64_t cycles)
     {
         static_cast<void>(dma);

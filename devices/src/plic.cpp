@@ -99,6 +99,7 @@ BusFault Plic::write(
         if (source != 0) {
             priorities_[source] =
                 static_cast<std::uint32_t>(value) & 0x7U;
+            refresh_all_pending();
         }
         return BusFault::None;
     }
@@ -119,6 +120,7 @@ BusFault Plic::write(
             enables_[context][word] =
                 static_cast<std::uint32_t>(value);
             enables_[context][0] &= ~1U;
+            refresh_pending(context);
             return BusFault::None;
         }
 
@@ -128,6 +130,7 @@ BusFault Plic::write(
         if (offset == context_registers) {
             thresholds_[context] =
                 static_cast<std::uint32_t>(value) & 0x7U;
+            refresh_pending(context);
             return BusFault::None;
         }
         if (offset == context_registers + claim_offset) {
@@ -205,14 +208,27 @@ void Plic::set_pending(
 
     const auto word = static_cast<std::size_t>(source / 32U);
     const auto bit = source % 32U;
+    const bool was_pending = source_pending(source);
     if (pending) {
         pending_[word] |= std::uint32_t{1} << bit;
     } else {
         pending_[word] &= ~(std::uint32_t{1} << bit);
     }
+    if (pending != was_pending) {
+        refresh_all_pending();
+    }
 }
 
 std::uint32_t Plic::best_pending(
+    std::uint32_t context) const noexcept
+{
+    if (context >= context_count) {
+        return 0;
+    }
+    return best_pending_cache_[context];
+}
+
+std::uint32_t Plic::compute_best_pending(
     std::uint32_t context) const noexcept
 {
     if (context >= context_count) {
@@ -242,6 +258,23 @@ std::uint32_t Plic::best_pending(
     }
 
     return best_source;
+}
+
+void Plic::refresh_pending(std::uint32_t context) noexcept
+{
+    if (context < context_count) {
+        best_pending_cache_[context] =
+            compute_best_pending(context);
+    }
+}
+
+void Plic::refresh_all_pending() noexcept
+{
+    for (std::uint32_t context = 0;
+         context < context_count;
+         ++context) {
+        refresh_pending(context);
+    }
 }
 
 std::uint32_t Plic::claim(std::uint32_t context) noexcept

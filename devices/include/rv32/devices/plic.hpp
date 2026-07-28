@@ -60,6 +60,12 @@ class Plic final : public platform::Device {
     [[nodiscard]] std::uint32_t best_pending(
         std::uint32_t context) const noexcept;
 
+    [[nodiscard]] std::uint32_t compute_best_pending(
+        std::uint32_t context) const noexcept;
+
+    void refresh_pending(std::uint32_t context) noexcept;
+    void refresh_all_pending() noexcept;
+
     [[nodiscard]] std::uint32_t claim(
         std::uint32_t context) noexcept;
 
@@ -77,6 +83,7 @@ class Plic final : public platform::Device {
     std::array<std::uint32_t, context_count> thresholds_{};
     std::array<std::uint32_t, context_count> claimed_{};
     std::array<bool, source_slots> source_levels_{};
+    std::array<std::uint32_t, context_count> best_pending_cache_{};
 };
 
 } // namespace rv32::devices

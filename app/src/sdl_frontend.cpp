@@ -23,8 +23,7 @@ constexpr int logical_height = 480;
 constexpr std::uint32_t terminal_background = 0xFF101820U;
 constexpr std::uint32_t terminal_foreground = 0xFFD8E5E8U;
 constexpr std::uint32_t terminal_cursor = 0xFF66D9EFU;
-constexpr std::uint64_t text_input_suppression_timeout_ms = 250U;
-constexpr std::size_t maximum_suppressed_text_size = 64U;
+constexpr std::uint32_t terminal_selection = 0xFF285577U;
 constexpr std::uint64_t display_refresh_interval_ms = 16U;
 
 [[nodiscard]] std::string ascii_key_text(
@@ -195,7 +194,7 @@ class SdlFrontend::Impl {
         static_cast<void>(
             SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest"));
         window_ = SDL_CreateWindow(
-            "RISC-V32 CPU Emulator - UART Terminal (F1) / Framebuffer (F2)",
+            "RISC-V32 CPU Emulator - Terminal F1 / Framebuffer F2",
             SDL_WINDOWPOS_CENTERED,
             SDL_WINDOWPOS_CENTERED,
             logical_width,
@@ -291,9 +290,19 @@ class SdlFrontend::Impl {
         return view_;
     }
 
+    [[nodiscard]] const SdlPerformanceCounters&
+    performance_counters() const noexcept
+    {
+        return performance_counters_;
+    }
+
     void append_uart(std::string_view output)
     {
         terminal_.append(output);
+        if (!output.empty() &&
+            (selection_active_ || selection_dragging_)) {
+            clear_selection();
+        }
     }
 
     [[nodiscard]] std::string poll_input()
@@ -331,10 +340,35 @@ class SdlFrontend::Impl {
             }
             if (event.type == SDL_MOUSEBUTTONDOWN) {
                 static_cast<void>(SDL_SetWindowInputFocus(window_));
+                SDL_StartTextInput();
+                if (view_ != DisplayView::Terminal) {
+                    continue;
+                }
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    begin_selection(event.button.x, event.button.y);
+                } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                    if (selection_active_) {
+                        static_cast<void>(copy_selection());
+                    } else {
+                        paste_clipboard(input);
+                    }
+                }
+                continue;
+            }
+            if (event.type == SDL_MOUSEMOTION &&
+                selection_dragging_ &&
+                view_ == DisplayView::Terminal) {
+                update_selection(event.motion.x, event.motion.y);
+                continue;
+            }
+            if (event.type == SDL_MOUSEBUTTONUP &&
+                event.button.button == SDL_BUTTON_LEFT &&
+                selection_dragging_) {
+                finish_selection(event.button.x, event.button.y);
                 continue;
             }
             if (event.type == SDL_TEXTINPUT) {
-                append_text_input(input, event.text.text);
+                input.append(event.text.text);
                 continue;
             }
             if (event.type != SDL_KEYDOWN) {
@@ -353,18 +387,19 @@ class SdlFrontend::Impl {
 
             const bool control =
                 (event.key.keysym.mod & KMOD_CTRL) != 0;
+            const bool shift =
+                (event.key.keysym.mod & KMOD_SHIFT) != 0;
+            if (control && shift && key == SDLK_c) {
+                static_cast<void>(copy_selection());
+                continue;
+            }
+            if (control && shift && key == SDLK_v) {
+                paste_clipboard(input);
+                continue;
+            }
             if (control && key >= SDLK_a && key <= SDLK_z) {
                 input.push_back(static_cast<char>(
                     key - SDLK_a + 1));
-                continue;
-            }
-
-            const auto key_text = ascii_key_text(
-                key,
-                static_cast<SDL_Keymod>(event.key.keysym.mod));
-            if (!key_text.empty()) {
-                input.append(key_text);
-                remember_key_text(key_text);
                 continue;
             }
 
@@ -410,6 +445,17 @@ class SdlFrontend::Impl {
                 input.append("\x1B[6~");
                 break;
             default:
+                // SDL_TEXTINPUT is the authoritative source for printable
+                // characters. Handling them in both KEYDOWN and TEXTINPUT
+                // requires timing-based de-duplication and can swallow input
+                // during fast typing, key repeat, or IME composition. Retain
+                // the keycode conversion only as a focus/text-input fallback.
+                if (!SDL_IsTextInputActive()) {
+                    input.append(ascii_key_text(
+                        key,
+                        static_cast<SDL_Keymod>(
+                            event.key.keysym.mod)));
+                }
                 break;
             }
         }
@@ -435,6 +481,7 @@ class SdlFrontend::Impl {
             has_presented_ &&
             now - last_present_ticks_ <
                 display_refresh_interval_ms) {
+            ++performance_counters_.deferred_updates;
             return;
         }
 
@@ -442,6 +489,11 @@ class SdlFrontend::Impl {
         int texture_pitch =
             logical_width *
             static_cast<int>(sizeof(std::uint32_t));
+        SDL_Rect dirty_rect{};
+        const SDL_Rect* update_rect = nullptr;
+        std::uint64_t uploaded_bytes =
+            static_cast<std::uint64_t>(logical_width) *
+            logical_height * sizeof(std::uint32_t);
         if (view_ == DisplayView::Terminal) {
             render_terminal();
         } else if (can_upload_directly(framebuffer)) {
@@ -450,13 +502,33 @@ class SdlFrontend::Impl {
                 static_cast<int>(
                     framebuffer->width() *
                     framebuffer->bytes_per_pixel());
+            const auto dirty = framebuffer->dirty_region();
+            if (!force_redraw_ && !dirty.empty()) {
+                dirty_rect = {
+                    .x = static_cast<int>(dirty.x),
+                    .y = static_cast<int>(dirty.y),
+                    .w = static_cast<int>(dirty.width),
+                    .h = static_cast<int>(dirty.height),
+                };
+                update_rect = &dirty_rect;
+                const auto source_offset =
+                    static_cast<std::size_t>(dirty.y) *
+                        static_cast<std::size_t>(texture_pitch) +
+                    static_cast<std::size_t>(dirty.x) *
+                        framebuffer->bytes_per_pixel();
+                texture_pixels =
+                    framebuffer->pixels().data() + source_offset;
+                uploaded_bytes =
+                    static_cast<std::uint64_t>(dirty.width) *
+                    dirty.height * framebuffer->bytes_per_pixel();
+            }
         } else {
             render_framebuffer(framebuffer);
         }
 
         if (SDL_UpdateTexture(
                 texture_,
-                nullptr,
+                update_rect,
                 texture_pixels,
                 texture_pitch) != 0) {
             set_error("SDL texture update failed");
@@ -468,6 +540,19 @@ class SdlFrontend::Impl {
             return;
         }
         SDL_RenderPresent(renderer_);
+        const std::uint64_t presented_at = SDL_GetTicks64();
+        if (performance_counters_.presented_frames == 0U) {
+            first_present_ticks_ = presented_at;
+        }
+        ++performance_counters_.presented_frames;
+        performance_counters_.presentation_span_ms =
+            presented_at - first_present_ticks_;
+        performance_counters_.uploaded_bytes += uploaded_bytes;
+        if (update_rect == nullptr) {
+            ++performance_counters_.full_texture_uploads;
+        } else {
+            ++performance_counters_.partial_texture_uploads;
+        }
 
         if (view_ == DisplayView::Terminal) {
             terminal_.clear_dirty();
@@ -476,56 +561,182 @@ class SdlFrontend::Impl {
         }
         force_redraw_ = false;
         has_presented_ = true;
-        last_present_ticks_ = SDL_GetTicks64();
+        // Measure the software refresh interval from the start of the
+        // presentation. Some accelerated Windows renderers block inside
+        // SDL_RenderPresent until vertical blank even without an explicit
+        // VSYNC flag. Measuring from completion would add another 16 ms
+        // delay and unintentionally reduce a 60 Hz display to about 30 Hz.
+        last_present_ticks_ = now;
     }
 
   private:
-    void expire_suppressed_text()
+    struct CellPosition {
+        std::size_t column{};
+        std::size_t row{};
+    };
+
+    [[nodiscard]] static constexpr std::size_t cell_index(
+        CellPosition position) noexcept
     {
-        if (suppressed_text_input_.empty()) {
+        return position.row * TerminalConsole::columns +
+               position.column;
+    }
+
+    [[nodiscard]] bool window_to_cell(
+        int window_x,
+        int window_y,
+        CellPosition& position) const noexcept
+    {
+        float logical_x = 0.0F;
+        float logical_y = 0.0F;
+        SDL_RenderWindowToLogical(
+            renderer_,
+            window_x,
+            window_y,
+            &logical_x,
+            &logical_y);
+        if (logical_x < 0.0F ||
+            logical_y < 0.0F ||
+            logical_x >= static_cast<float>(logical_width) ||
+            logical_y >= static_cast<float>(logical_height)) {
+            return false;
+        }
+        position = {
+            .column = static_cast<std::size_t>(logical_x) / 8U,
+            .row = static_cast<std::size_t>(logical_y) / 16U,
+        };
+        return position.column < TerminalConsole::columns &&
+               position.row < TerminalConsole::rows;
+    }
+
+    void begin_selection(int window_x, int window_y)
+    {
+        CellPosition position;
+        if (!window_to_cell(window_x, window_y, position)) {
+            clear_selection();
             return;
         }
+        selection_anchor_ = position;
+        selection_extent_ = position;
+        selection_dragging_ = true;
+        selection_active_ = false;
+        force_redraw_ = true;
+    }
 
-        const std::uint64_t now = SDL_GetTicks64();
-        if (now - last_key_text_ticks_ >
-            text_input_suppression_timeout_ms) {
-            suppressed_text_input_.clear();
+    void update_selection(int window_x, int window_y)
+    {
+        CellPosition position;
+        if (!window_to_cell(window_x, window_y, position)) {
+            return;
+        }
+        if (cell_index(position) == cell_index(selection_extent_)) {
+            return;
+        }
+        selection_extent_ = position;
+        selection_active_ =
+            cell_index(selection_anchor_) !=
+            cell_index(selection_extent_);
+        force_redraw_ = true;
+    }
+
+    void finish_selection(int window_x, int window_y)
+    {
+        update_selection(window_x, window_y);
+        selection_dragging_ = false;
+        if (!selection_active_) {
+            force_redraw_ = true;
         }
     }
 
-    void remember_key_text(std::string_view text)
+    void clear_selection() noexcept
     {
-        expire_suppressed_text();
-        suppressed_text_input_.append(text);
-        if (suppressed_text_input_.size() >
-            maximum_suppressed_text_size) {
-            suppressed_text_input_.erase(
-                0,
-                suppressed_text_input_.size() -
-                    maximum_suppressed_text_size);
-        }
-        last_key_text_ticks_ = SDL_GetTicks64();
+        selection_dragging_ = false;
+        selection_active_ = false;
+        force_redraw_ = true;
     }
 
-    void append_text_input(
-        std::string& input,
-        std::string_view text)
+    [[nodiscard]] bool cell_selected(
+        std::size_t column,
+        std::size_t row) const noexcept
     {
-        expire_suppressed_text();
+        if (!selection_active_) {
+            return false;
+        }
+        const std::size_t current =
+            row * TerminalConsole::columns + column;
+        const std::size_t anchor = cell_index(selection_anchor_);
+        const std::size_t extent = cell_index(selection_extent_);
+        const std::size_t first = std::min(anchor, extent);
+        const std::size_t last = std::max(anchor, extent);
+        return current >= first && current <= last;
+    }
 
-        std::size_t matched = 0;
-        while (matched < text.size() &&
-               matched < suppressed_text_input_.size() &&
-               text[matched] == suppressed_text_input_[matched]) {
-            ++matched;
+    [[nodiscard]] bool copy_selection()
+    {
+        if (!selection_active_) {
+            return false;
         }
-        if (matched != 0U) {
-            suppressed_text_input_.erase(0, matched);
+
+        const std::size_t anchor = cell_index(selection_anchor_);
+        const std::size_t extent = cell_index(selection_extent_);
+        const std::size_t first = std::min(anchor, extent);
+        const std::size_t last = std::max(anchor, extent);
+        const std::size_t first_row =
+            first / TerminalConsole::columns;
+        const std::size_t last_row =
+            last / TerminalConsole::columns;
+        std::string text;
+        for (std::size_t row = first_row; row <= last_row; ++row) {
+            const std::size_t begin =
+                row == first_row
+                    ? first % TerminalConsole::columns
+                    : 0U;
+            const std::size_t end =
+                row == last_row
+                    ? last % TerminalConsole::columns
+                    : TerminalConsole::columns - 1U;
+            std::string line;
+            line.reserve(end - begin + 1U);
+            for (std::size_t column = begin;
+                 column <= end;
+                 ++column) {
+                line.push_back(terminal_.cell(column, row));
+            }
+            while (!line.empty() && line.back() == ' ') {
+                line.pop_back();
+            }
+            text.append(line);
+            if (row != last_row) {
+                text.push_back('\n');
+            }
         }
-        if (matched < text.size()) {
-            suppressed_text_input_.clear();
-            input.append(text.substr(matched));
+        return SDL_SetClipboardText(text.c_str()) == 0;
+    }
+
+    static void paste_clipboard(std::string& input)
+    {
+        if (SDL_HasClipboardText() != SDL_TRUE) {
+            return;
         }
+        char* const clipboard = SDL_GetClipboardText();
+        if (clipboard == nullptr) {
+            return;
+        }
+        const std::string_view text{clipboard};
+        for (std::size_t index = 0; index < text.size(); ++index) {
+            if (text[index] == '\r') {
+                input.push_back('\r');
+                if (index + 1U < text.size() &&
+                    text[index + 1U] == '\n') {
+                    ++index;
+                }
+            } else if (text[index] == '\n') {
+                input.push_back('\r');
+            } else {
+                input.push_back(text[index]);
+            }
+        }
+        SDL_free(clipboard);
     }
 
     void set_error(std::string_view context)
@@ -550,7 +761,7 @@ class SdlFrontend::Impl {
         SDL_SetWindowTitle(
             window_,
             view_ == DisplayView::Terminal
-                ? "RISC-V32 CPU Emulator - UART Terminal (F1)"
+                ? "RISC-V32 CPU Emulator - Terminal F1 - Drag/Right Click"
                 : "RISC-V32 CPU Emulator - Linux Framebuffer (F2)");
     }
 
@@ -567,6 +778,20 @@ class SdlFrontend::Impl {
             for (std::size_t column = 0;
                  column < TerminalConsole::columns;
                  ++column) {
+                if (cell_selected(column, row)) {
+                    const std::size_t selection_x = column * 8U;
+                    const std::size_t selection_y = row * 16U;
+                    for (std::size_t y = selection_y;
+                         y < selection_y + 16U;
+                         ++y) {
+                        std::fill_n(
+                            pixels_.begin() +
+                                static_cast<std::ptrdiff_t>(
+                                    y * logical_width + selection_x),
+                            8U,
+                            terminal_selection);
+                    }
+                }
                 unsigned char character =
                     static_cast<unsigned char>(
                         terminal_.cell(column, row));
@@ -669,9 +894,13 @@ class SdlFrontend::Impl {
     bool active_{};
     bool force_redraw_{true};
     bool has_presented_{};
+    bool selection_dragging_{};
+    bool selection_active_{};
+    CellPosition selection_anchor_{};
+    CellPosition selection_extent_{};
     std::uint64_t last_present_ticks_{};
-    std::string suppressed_text_input_;
-    std::uint64_t last_key_text_ticks_{};
+    std::uint64_t first_present_ticks_{};
+    SdlPerformanceCounters performance_counters_{};
 };
 
 SdlFrontend::SdlFrontend()
@@ -699,6 +928,12 @@ std::string_view SdlFrontend::error() const noexcept
 DisplayView SdlFrontend::view() const noexcept
 {
     return impl_->view();
+}
+
+const SdlPerformanceCounters&
+SdlFrontend::performance_counters() const noexcept
+{
+    return impl_->performance_counters();
 }
 
 void SdlFrontend::append_uart(std::string_view output)

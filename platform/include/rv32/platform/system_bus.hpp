@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -15,6 +16,17 @@ namespace rv32::platform {
 struct DeviceInfo {
     std::string name;
     AddressRange range;
+};
+
+struct BusPerformanceCounters {
+    static constexpr std::size_t access_kind_count = 6U;
+
+    std::array<std::uint64_t, access_kind_count> reads{};
+    std::array<std::uint64_t, access_kind_count> writes{};
+    std::uint64_t faults{};
+    std::uint64_t device_lookups{};
+    std::uint64_t device_cache_hits{};
+    std::uint64_t device_ticks{};
 };
 
 class SystemBus final : public CpuBus, public DmaAccess {
@@ -44,6 +56,11 @@ class SystemBus final : public CpuBus, public DmaAccess {
 
     void tick_devices(std::uint64_t cycles);
 
+    [[nodiscard]] const BusPerformanceCounters&
+    performance_counters() const noexcept;
+
+    void reset_performance_counters() noexcept;
+
     [[nodiscard]] ReadResult read(
         PhysAddr address,
         AccessWidth width,
@@ -72,6 +89,9 @@ class SystemBus final : public CpuBus, public DmaAccess {
 
     [[nodiscard]] std::uint64_t read_time() const noexcept override;
 
+    [[nodiscard]] bool instruction_cacheable(
+        PhysAddr address) const noexcept override;
+
     [[nodiscard]] ReadResult dma_read(
         PhysAddr address,
         AccessWidth width) override;
@@ -89,12 +109,15 @@ class SystemBus final : public CpuBus, public DmaAccess {
 
     [[nodiscard]] Device* find_device(
         PhysAddr address,
-        AccessWidth width) const noexcept;
+        AccessWidth width) noexcept;
 
     std::vector<std::unique_ptr<Device>> devices_;
+    std::vector<Device*> tick_devices_;
     std::unordered_map<std::uint32_t, Reservation> reservations_;
     const TimeSource* time_source_{};
     std::uint64_t write_epoch_{};
+    Device* last_device_{};
+    BusPerformanceCounters performance_counters_{};
 };
 
 } // namespace rv32::platform

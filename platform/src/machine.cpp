@@ -59,6 +59,7 @@ Machine::~Machine() = default;
 void Machine::reset(const ResetConfig& config)
 {
     irq_lines_ = {};
+    bus_.reset_performance_counters();
     core_.reset(config);
 }
 

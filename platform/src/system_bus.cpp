@@ -32,6 +32,7 @@ void SystemBus::add_device(std::unique_ptr<Device> device)
             "bus device address range overlaps an existing device");
     }
 
+    Device* const added_device = device.get();
     devices_.push_back(std::move(device));
     std::sort(
         devices_.begin(),
@@ -39,6 +40,10 @@ void SystemBus::add_device(std::unique_ptr<Device> device)
         [](const auto& left, const auto& right) {
             return left->range().base < right->range().base;
         });
+    if (added_device->needs_tick()) {
+        tick_devices_.push_back(added_device);
+    }
+    last_device_ = nullptr;
 }
 
 void SystemBus::set_time_source(const TimeSource* time_source) noexcept
@@ -63,9 +68,21 @@ std::vector<DeviceInfo> SystemBus::device_map() const
 
 void SystemBus::tick_devices(std::uint64_t cycles)
 {
-    for (auto& device : devices_) {
+    ++performance_counters_.device_ticks;
+    for (auto* device : tick_devices_) {
         device->tick(*this, cycles);
     }
+}
+
+const BusPerformanceCounters&
+SystemBus::performance_counters() const noexcept
+{
+    return performance_counters_;
+}
+
+void SystemBus::reset_performance_counters() noexcept
+{
+    performance_counters_ = {};
 }
 
 ReadResult SystemBus::read(
@@ -73,14 +90,21 @@ ReadResult SystemBus::read(
     AccessWidth width,
     AccessKind kind)
 {
-    static_cast<void>(kind);
+    const auto kind_index = static_cast<std::size_t>(kind);
+    ++performance_counters_.reads[kind_index];
 
     auto* device = find_device(address, width);
     if (device == nullptr) {
+        ++performance_counters_.faults;
         return {.fault = BusFault::Unmapped};
     }
 
-    return device->read(address - device->range().base, width);
+    const ReadResult result =
+        device->read(address - device->range().base, width);
+    if (!result.ok()) {
+        ++performance_counters_.faults;
+    }
+    return result;
 }
 
 BusFault SystemBus::write(
@@ -89,10 +113,12 @@ BusFault SystemBus::write(
     std::uint64_t value,
     AccessKind kind)
 {
-    static_cast<void>(kind);
+    const auto kind_index = static_cast<std::size_t>(kind);
+    ++performance_counters_.writes[kind_index];
 
     auto* device = find_device(address, width);
     if (device == nullptr) {
+        ++performance_counters_.faults;
         return BusFault::Unmapped;
     }
 
@@ -100,6 +126,8 @@ BusFault SystemBus::write(
         device->write(address - device->range().base, width, value);
     if (fault == BusFault::None) {
         ++write_epoch_;
+    } else {
+        ++performance_counters_.faults;
     }
     return fault;
 }
@@ -241,6 +269,32 @@ std::uint64_t SystemBus::read_time() const noexcept
     return time_source_ == nullptr ? 0 : time_source_->time_value();
 }
 
+bool SystemBus::instruction_cacheable(
+    PhysAddr address) const noexcept
+{
+    if (last_device_ != nullptr &&
+        last_device_->range().contains(
+            address,
+            AccessWidth::Byte)) {
+        return last_device_->instruction_cacheable();
+    }
+    const auto upper = std::upper_bound(
+        devices_.begin(),
+        devices_.end(),
+        address,
+        [](PhysAddr value, const auto& device) {
+            return value < device->range().base;
+        });
+    if (upper == devices_.begin()) {
+        return false;
+    }
+    auto candidate = upper;
+    --candidate;
+    return
+        (*candidate)->range().contains(address, AccessWidth::Byte) &&
+        (*candidate)->instruction_cacheable();
+}
+
 ReadResult SystemBus::dma_read(
     PhysAddr address,
     AccessWidth width)
@@ -258,16 +312,32 @@ BusFault SystemBus::dma_write(
 
 Device* SystemBus::find_device(
     PhysAddr address,
-    AccessWidth width) const noexcept
+    AccessWidth width) noexcept
 {
-    const auto found = std::find_if(
+    ++performance_counters_.device_lookups;
+    if (last_device_ != nullptr &&
+        last_device_->range().contains(address, width)) {
+        ++performance_counters_.device_cache_hits;
+        return last_device_;
+    }
+
+    const auto upper = std::upper_bound(
         devices_.begin(),
         devices_.end(),
-        [address, width](const auto& device) {
-            return device->range().contains(address, width);
+        address,
+        [](PhysAddr value, const auto& device) {
+            return value < device->range().base;
         });
-
-    return found == devices_.end() ? nullptr : found->get();
+    if (upper == devices_.begin()) {
+        return nullptr;
+    }
+    auto candidate = upper;
+    --candidate;
+    if (!(*candidate)->range().contains(address, width)) {
+        return nullptr;
+    }
+    last_device_ = candidate->get();
+    return last_device_;
 }
 
 } // namespace rv32::platform

@@ -70,18 +70,32 @@ void print_commit_trace(const rv32::CommitTrace& trace)
 
 int main(int argc, char** argv)
 {
-    const bool trace_enabled =
-        argc == 3 &&
-        std::string_view(argv[1]) == "--trace";
-    if (argc != 2 && !trace_enabled) {
+    bool trace_enabled = false;
+    bool reference_mode = false;
+    const char* image_path = nullptr;
+    for (int index = 1; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument == "--trace") {
+            trace_enabled = true;
+        } else if (argument == "--reference") {
+            reference_mode = true;
+        } else if (!argument.empty() && argument.front() == '-') {
+            std::cerr << "unknown option: " << argument << '\n';
+            return 2;
+        } else if (image_path == nullptr) {
+            image_path = argv[index];
+        } else {
+            image_path = nullptr;
+            break;
+        }
+    }
+    if (image_path == nullptr) {
         std::cerr
             << "usage: rv32_architecture_runner "
-            << "[--trace] <raw-binary>\n";
+            << "[--trace] [--reference] <raw-binary>\n";
         return 2;
     }
 
-    const char* const image_path =
-        argv[trace_enabled ? 2 : 1];
     std::ifstream input(image_path, std::ios::binary);
     if (!input) {
         std::cerr << "cannot open architecture-test image\n";
@@ -100,6 +114,10 @@ int main(int argc, char** argv)
     config.virtual_disk_size = 512U;
     config.enable_framebuffer = false;
     rv32::platform::Machine machine(config);
+    if (reference_mode) {
+        machine.core().set_execution_mode(
+            rv32::ExecutionMode::Reference);
+    }
     if (machine.ram().load_image(image) != rv32::BusFault::None) {
         std::cerr << "cannot load architecture-test image\n";
         return 5;

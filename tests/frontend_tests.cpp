@@ -332,6 +332,84 @@ void test_bus_misalignment_is_not_lost()
     CHECK(bus.write_count == 0U);
 }
 
+void test_decode_cache_hits_and_preserves_instruction_length()
+{
+    rv32::DecodeCache cache;
+    rv32::DecodePerformanceCounters counters;
+
+    const auto first = cache.decode(0x00500093U, 4U, &counters);
+    const auto second = cache.decode(0x00500093U, 4U, &counters);
+    CHECK(first.kind == rv32::InstructionKind::Addi);
+    CHECK(second.kind == first.kind);
+    CHECK(counters.lookups == 2U);
+    CHECK(counters.misses == 1U);
+    CHECK(counters.hits == 1U);
+    CHECK(cache.valid_entries() == 1U);
+
+    const auto compressed = cache.decode(0x00000001U, 2U, &counters);
+    CHECK(compressed.length == 2U);
+    CHECK(compressed.kind == rv32::InstructionKind::Addi);
+    CHECK(cache.valid_entries() == 2U);
+
+    cache.clear(&counters);
+    CHECK(cache.valid_entries() == 0U);
+    CHECK(counters.invalidations == 1U);
+}
+
+void test_instruction_cache_requires_explicit_invalidation()
+{
+    rv32::InstructionCache cache;
+    rv32::InstructionCachePerformanceCounters counters;
+    constexpr std::uint32_t virtual_address = 0x80001000U;
+    const rv32::CachedInstruction cached{
+        .instruction = 0x00108093U,
+        .decoded = rv32::decode_instruction(0x00108093U),
+    };
+
+    CHECK(!cache.lookup(virtual_address, nullptr, &counters).has_value());
+    cache.insert(virtual_address, nullptr, cached);
+    const auto hit =
+        cache.lookup(virtual_address, nullptr, &counters);
+    CHECK(hit.has_value());
+    CHECK(hit->instruction == cached.instruction);
+    CHECK(hit->decoded.kind == rv32::InstructionKind::Addi);
+    CHECK(counters.misses == 1U);
+    CHECK(counters.hits == 1U);
+    CHECK(cache.valid_entries() == 1U);
+
+    cache.clear(&counters);
+    CHECK(!cache.lookup(virtual_address, nullptr, &counters).has_value());
+    CHECK(counters.invalidations == 1U);
+    CHECK(cache.valid_entries() == 0U);
+}
+
+void test_instruction_cache_sfence_scope()
+{
+    rv32::InstructionCache cache;
+    rv32::InstructionCachePerformanceCounters counters;
+    rv32::CpuSnapshot state;
+    state.privilege = rv32::PrivilegeMode::Supervisor;
+    state.supervisor_csrs.satp =
+        rv32::satp_bits::mode |
+        (3U << 22U) |
+        0x123U;
+    const rv32::CachedInstruction cached{
+        .instruction = 0x00108093U,
+        .decoded = rv32::decode_instruction(0x00108093U),
+    };
+    constexpr std::uint32_t first_address = 0x40001000U;
+    constexpr std::uint32_t second_address = 0x40008000U;
+
+    cache.insert(first_address, &state, cached);
+    cache.insert(second_address, &state, cached);
+    cache.sfence_vma(first_address, 3U, &counters);
+
+    CHECK(!cache.lookup(first_address, &state, &counters).has_value());
+    CHECK(cache.lookup(second_address, &state, &counters).has_value());
+    CHECK(cache.valid_entries() == 1U);
+    CHECK(counters.invalidations == 1U);
+}
+
 } // namespace
 
 int main()
@@ -345,6 +423,9 @@ int main()
     test_illegal_instruction_preserves_raw_value();
     test_bus_faults_are_preserved();
     test_bus_misalignment_is_not_lost();
+    test_decode_cache_hits_and_preserves_instruction_length();
+    test_instruction_cache_requires_explicit_invalidation();
+    test_instruction_cache_sfence_scope();
 
     if (failures == 0) {
         std::cout << "All RV32 frontend tests passed\n";

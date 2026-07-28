@@ -378,7 +378,9 @@ MemoryResult execute_memory(
     std::uint32_t pc,
     std::uint32_t rs1_value,
     std::uint32_t rs2_value,
-    const CpuSnapshot* state)
+    const CpuSnapshot* state,
+    Sv32Tlb* tlb,
+    MmuPerformanceCounters* mmu_counters)
 {
     const std::uint32_t address =
         rs1_value + decoded.immediate;
@@ -448,14 +450,23 @@ MemoryResult execute_memory(
 
     PhysAddr physical_address = static_cast<PhysAddr>(address);
     if (state != nullptr) {
+        const MemoryAccessType access =
+            is_load
+                ? MemoryAccessType::Load
+                : MemoryAccessType::Store;
         const TranslationResult translation =
-            translate_address(
-                bus,
-                *state,
-                address,
-                is_load
-                    ? MemoryAccessType::Load
-                    : MemoryAccessType::Store);
+            tlb == nullptr
+                ? translate_address(
+                      bus,
+                      *state,
+                      address,
+                      access)
+                : tlb->translate(
+                      bus,
+                      *state,
+                      address,
+                      access,
+                      mmu_counters);
         if (!translation.ready()) {
             return failure(
                 translation.status == TranslationStatus::PageFault
@@ -560,7 +571,9 @@ AtomicExecutionResult execute_atomic(
     std::uint32_t hart_id,
     std::uint32_t rs1_value,
     std::uint32_t rs2_value,
-    const CpuSnapshot* state)
+    const CpuSnapshot* state,
+    Sv32Tlb* tlb,
+    MmuPerformanceCounters* mmu_counters)
 {
     const PendingCommit not_ready{
         .status = ExecuteStatus::UnsupportedInstruction,
@@ -667,14 +680,23 @@ AtomicExecutionResult execute_atomic(
 
     PhysAddr address = static_cast<PhysAddr>(rs1_value);
     if (state != nullptr) {
+        const MemoryAccessType access =
+            is_load_reserved
+                ? MemoryAccessType::Load
+                : MemoryAccessType::Store;
         const TranslationResult translation =
-            translate_address(
-                bus,
-                *state,
-                rs1_value,
-                is_load_reserved
-                    ? MemoryAccessType::Load
-                    : MemoryAccessType::Store);
+            tlb == nullptr
+                ? translate_address(
+                      bus,
+                      *state,
+                      rs1_value,
+                      access)
+                : tlb->translate(
+                      bus,
+                      *state,
+                      rs1_value,
+                      access,
+                      mmu_counters);
         if (!translation.ready()) {
             return failure(
                 translation.status == TranslationStatus::PageFault

@@ -23,6 +23,11 @@ class Clint final : public platform::Device, public platform::TimeSource {
         AccessWidth width,
         std::uint64_t value) override;
 
+    [[nodiscard]] bool needs_tick() const noexcept override
+    {
+        return true;
+    }
+
     void tick(
         platform::DmaAccess& dma,
         std::uint64_t cycles) override;

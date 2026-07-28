@@ -17,6 +17,11 @@ class Ram final : public platform::Device {
     [[nodiscard]] std::string_view name() const noexcept override;
     [[nodiscard]] platform::AddressRange range() const noexcept override;
 
+    [[nodiscard]] bool instruction_cacheable() const noexcept override
+    {
+        return true;
+    }
+
     [[nodiscard]] ReadResult read(
         std::uint64_t offset,
         AccessWidth width) override;

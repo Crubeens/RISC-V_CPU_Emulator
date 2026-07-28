@@ -312,6 +312,12 @@ void test_uart_syscon_and_framebuffer()
             0xAABBCCDDU,
             AccessKind::Store) == BusFault::None);
     CHECK(framebuffer.dirty());
+    CHECK(framebuffer.dirty_region().x == 0U);
+    CHECK(framebuffer.dirty_region().y == 0U);
+    CHECK(framebuffer.dirty_region().width == 1U);
+    CHECK(framebuffer.dirty_region().height == 1U);
+    CHECK(framebuffer.statistics().write_operations == 1U);
+    CHECK(framebuffer.statistics().bytes_written == 4U);
     CHECK(
         bus.read(
                framebuffer_base,
@@ -320,6 +326,20 @@ void test_uart_syscon_and_framebuffer()
             .value == 0xAABBCCDDU);
     framebuffer.clear_dirty();
     CHECK(!framebuffer.dirty());
+    CHECK(framebuffer.dirty_region().empty());
+
+    CHECK(
+        bus.write(
+            framebuffer_base + (2U * 16U + 5U) * 4U,
+            AccessWidth::Word,
+            0x01020304U,
+            AccessKind::Store) == BusFault::None);
+    CHECK(framebuffer.dirty_region().x == 5U);
+    CHECK(framebuffer.dirty_region().y == 2U);
+    CHECK(framebuffer.dirty_region().width == 1U);
+    CHECK(framebuffer.dirty_region().height == 1U);
+    CHECK(framebuffer.statistics().write_operations == 2U);
+    CHECK(framebuffer.statistics().bytes_written == 8U);
 }
 
 void test_framebuffer_rejects_overflowing_dimensions()

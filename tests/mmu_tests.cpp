@@ -715,6 +715,166 @@ void test_accessed_dirty_updates_and_walk_faults()
     CHECK(write_fault.bus_fault == rv32::BusFault::ReadOnly);
 }
 
+void test_tlb_hits_asids_global_entries_and_fences()
+{
+    constexpr std::uint32_t virtual_address = 0x62003124U;
+    constexpr rv32::PhysAddr physical_a = 0x0000C000ULL;
+    constexpr rv32::PhysAddr physical_b = 0x0000D000ULL;
+    constexpr rv32::PhysAddr physical_c = 0x0000E000ULL;
+    constexpr std::uint32_t read_write =
+        rv32::sv32_pte_bits::read |
+        rv32::sv32_pte_bits::write |
+        rv32::sv32_pte_bits::accessed;
+
+    MemoryBus bus;
+    rv32::CpuSnapshot state;
+    state.privilege = rv32::PrivilegeMode::Supervisor;
+    const auto mapping = map_4k(
+        bus,
+        state,
+        virtual_address,
+        physical_a,
+        read_write);
+    state.supervisor_csrs.satp |= 1U << 22U;
+
+    rv32::Sv32Tlb tlb;
+    rv32::MmuPerformanceCounters counters;
+    const auto first = tlb.translate(
+        bus,
+        state,
+        virtual_address,
+        rv32::MemoryAccessType::Load,
+        &counters);
+    CHECK(first.ready());
+    CHECK(first.physical_address == physical_a + 0x124U);
+    CHECK(counters.tlb_misses == 1U);
+    CHECK(counters.page_table_walks == 1U);
+    CHECK(counters.pte_reads == 2U);
+    CHECK(tlb.valid_entries() == 1U);
+
+    bus.clear_counters();
+    const auto hit = tlb.translate(
+        bus,
+        state,
+        virtual_address,
+        rv32::MemoryAccessType::Load,
+        &counters);
+    CHECK(hit.ready());
+    CHECK(hit.physical_address == first.physical_address);
+    CHECK(bus.page_walk_reads == 0U);
+    CHECK(counters.tlb_hits == 1U);
+
+    // A store cannot use a load-filled entry whose cached PTE lacks D. The
+    // fresh walk must set D before the store translation is cached.
+    const auto store = tlb.translate(
+        bus,
+        state,
+        virtual_address,
+        rv32::MemoryAccessType::Store,
+        &counters);
+    CHECK(store.ready());
+    CHECK(bus.page_walk_reads == 2U);
+    CHECK(
+        (bus.load_word(mapping.leaf_pte) &
+         rv32::sv32_pte_bits::dirty) != 0U);
+
+    bus.store_word(
+        mapping.leaf_pte,
+        make_pte(
+            physical_b,
+            read_write |
+                rv32::sv32_pte_bits::dirty |
+                rv32::sv32_pte_bits::valid));
+    const auto stale = tlb.translate(
+        bus,
+        state,
+        virtual_address,
+        rv32::MemoryAccessType::Load);
+    CHECK(stale.physical_address == physical_a + 0x124U);
+
+    tlb.sfence_vma(virtual_address, std::nullopt);
+    const auto refreshed = tlb.translate(
+        bus,
+        state,
+        virtual_address,
+        rv32::MemoryAccessType::Load);
+    CHECK(refreshed.physical_address == physical_b + 0x124U);
+
+    // The same virtual page for another ASID coexists in the set.
+    bus.store_word(
+        mapping.leaf_pte,
+        make_pte(
+            physical_c,
+            read_write |
+                rv32::sv32_pte_bits::dirty |
+                rv32::sv32_pte_bits::valid));
+    state.supervisor_csrs.satp =
+        (state.supervisor_csrs.satp & ~rv32::satp_bits::asid) |
+        (2U << 22U);
+    const auto asid_two = tlb.translate(
+        bus,
+        state,
+        virtual_address,
+        rv32::MemoryAccessType::Load);
+    CHECK(asid_two.physical_address == physical_c + 0x124U);
+
+    state.supervisor_csrs.satp =
+        (state.supervisor_csrs.satp & ~rv32::satp_bits::asid) |
+        (1U << 22U);
+    CHECK(
+        tlb.translate(
+               bus,
+               state,
+               virtual_address,
+               rv32::MemoryAccessType::Load)
+            .physical_address ==
+        physical_b + 0x124U);
+    tlb.sfence_vma(
+        std::nullopt,
+        std::optional<std::uint16_t>{1U});
+    CHECK(
+        tlb.translate(
+               bus,
+               state,
+               virtual_address,
+               rv32::MemoryAccessType::Load)
+            .physical_address ==
+        physical_c + 0x124U);
+
+    // Global entries match every ASID and survive ASID-scoped fences.
+    bus.store_word(
+        mapping.leaf_pte,
+        make_pte(
+            physical_a,
+            read_write |
+                rv32::sv32_pte_bits::dirty |
+                rv32::sv32_pte_bits::global |
+                rv32::sv32_pte_bits::valid));
+    tlb.sfence_vma(virtual_address, std::nullopt);
+    const auto global = tlb.translate(
+        bus,
+        state,
+        virtual_address,
+        rv32::MemoryAccessType::Load);
+    CHECK(global.physical_address == physical_a + 0x124U);
+    tlb.sfence_vma(
+        std::nullopt,
+        std::optional<std::uint16_t>{1U});
+    state.supervisor_csrs.satp =
+        (state.supervisor_csrs.satp & ~rv32::satp_bits::asid) |
+        (3U << 22U);
+    CHECK(
+        tlb.translate(
+               bus,
+               state,
+               virtual_address,
+               rv32::MemoryAccessType::Load)
+            .physical_address ==
+        physical_a + 0x124U);
+    tlb.sfence_vma(std::nullopt, std::nullopt);
+    CHECK(tlb.valid_entries() == 0U);
+}
+
 void test_mprv_effective_privilege()
 {
     constexpr std::uint32_t virtual_address = 0x70003000U;
@@ -995,7 +1155,9 @@ void test_satp_tvm_sfence_and_mprv_return()
     CHECK(rv32::sanitize_satp(0x7FFFFFFFU) == 0U);
     CHECK(
         rv32::sanitize_satp(0xFFFFFFFFU) ==
-        (rv32::satp_bits::mode | rv32::satp_bits::ppn));
+        (rv32::satp_bits::mode |
+         rv32::satp_bits::asid |
+         rv32::satp_bits::ppn));
     CHECK(
         (rv32::supported_exception_delegation &
          ((1U << 12U) | (1U << 13U) | (1U << 15U))) ==
@@ -1010,7 +1172,9 @@ void test_satp_tvm_sfence_and_mprv_return()
                 rv32::csr_address::satp,
                 rv32::PrivilegeMode::Supervisor)
             .value ==
-        (rv32::satp_bits::mode | rv32::satp_bits::ppn));
+        (rv32::satp_bits::mode |
+         rv32::satp_bits::asid |
+         rv32::satp_bits::ppn));
 
     state.machine_csrs.mstatus = rv32::mstatus_bits::tvm;
     CHECK(
@@ -1158,6 +1322,65 @@ void test_core_reports_load_page_fault()
     CHECK(trapped.instructions_retired == std::size(program));
 }
 
+void test_core_sfence_vma_invalidates_local_tlb()
+{
+    constexpr std::uint32_t boot_pc = 0x80000000U;
+    constexpr std::uint32_t virtual_code = 0x40400000U;
+    constexpr rv32::PhysAddr physical_code = 0x00003000U;
+
+    MemoryBus bus;
+    rv32::CpuSnapshot page_state;
+    page_state.privilege = rv32::PrivilegeMode::Supervisor;
+    map_4k(
+        bus,
+        page_state,
+        virtual_code,
+        physical_code,
+        rv32::sv32_pte_bits::read |
+            rv32::sv32_pte_bits::execute |
+            rv32::sv32_pte_bits::accessed);
+
+    const std::uint32_t program[]{
+        encode_u(0x80000000U, 1U),
+        encode_i(1U, 1U, 0U, 1U, 0x13U),
+        encode_csr(rv32::csr_address::satp, 1U),
+        encode_u(virtual_code, 2U),
+        encode_csr(rv32::csr_address::mepc, 2U),
+        encode_u(0x1000U, 3U),
+        encode_i(0x800U, 3U, 0U, 3U, 0x13U),
+        encode_csr(rv32::csr_address::mstatus, 3U),
+        0x30200073U,
+    };
+    for (std::size_t index = 0;
+         index < std::size(program);
+         ++index) {
+        bus.store_word(
+            boot_pc + static_cast<rv32::PhysAddr>(index) * 4U,
+            program[index]);
+    }
+    bus.store_word(physical_code, 0x12000073U);
+
+    rv32::Core core(bus);
+    core.reset({
+        .reset_pc = boot_pc,
+        .hart_id = 0,
+        .initial_privilege = rv32::PrivilegeMode::Machine,
+    });
+    for (std::size_t index = 0;
+         index < std::size(program);
+         ++index) {
+        CHECK(core.step({}).status == rv32::StepStatus::Retired);
+    }
+    CHECK(core.snapshot().privilege == rv32::PrivilegeMode::Supervisor);
+    CHECK(core.snapshot().pc == virtual_code);
+    CHECK(core.tlb_entries() == 0U);
+
+    CHECK(core.step({}).status == rv32::StepStatus::Retired);
+    CHECK(core.snapshot().pc == virtual_code + 4U);
+    CHECK(core.tlb_entries() == 0U);
+    CHECK(core.performance_counters().mmu.tlb_misses >= 1U);
+}
+
 } // namespace
 
 int main()
@@ -1167,11 +1390,13 @@ int main()
     test_invalid_page_table_entries();
     test_sum_mxr_and_user_permissions();
     test_accessed_dirty_updates_and_walk_faults();
+    test_tlb_hits_asids_global_entries_and_fences();
     test_mprv_effective_privilege();
     test_fault_classification_paths();
     test_frontend_memory_and_atomic_translation();
     test_satp_tvm_sfence_and_mprv_return();
     test_core_reports_load_page_fault();
+    test_core_sfence_vma_invalidates_local_tlb();
 
     if (failures != 0) {
         std::cerr << failures << " MMU test(s) failed\n";

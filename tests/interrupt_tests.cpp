@@ -314,7 +314,9 @@ void test_privileged_counter_controls_and_warl_csrs()
                 rv32::csr_address::satp,
                 rv32::PrivilegeMode::Supervisor)
             .value ==
-        (rv32::satp_bits::mode | rv32::satp_bits::ppn));
+        (rv32::satp_bits::mode |
+         rv32::satp_bits::asid |
+         rv32::satp_bits::ppn));
     csrs.write_validated(rv32::csr_address::mstatush, 0xFFFFFFFFU);
     CHECK(
         csrs.read(

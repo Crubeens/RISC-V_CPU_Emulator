@@ -110,6 +110,15 @@ class CpuBus {
         std::uint32_t operand) = 0;
 
     [[nodiscard]] virtual std::uint64_t read_time() const noexcept = 0;
+
+    // Fast frontends may retain fetched instruction bytes only for memory
+    // regions that explicitly opt in. MMIO remains non-cacheable by default.
+    [[nodiscard]] virtual bool instruction_cacheable(
+        PhysAddr address) const noexcept
+    {
+        static_cast<void>(address);
+        return false;
+    }
 };
 
 } // namespace rv32

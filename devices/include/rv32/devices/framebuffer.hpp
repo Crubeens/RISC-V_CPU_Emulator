@@ -9,6 +9,24 @@
 
 namespace rv32::devices {
 
+struct FramebufferDirtyRegion {
+    std::uint32_t x{};
+    std::uint32_t y{};
+    std::uint32_t width{};
+    std::uint32_t height{};
+
+    [[nodiscard]] constexpr bool empty() const noexcept
+    {
+        return width == 0U || height == 0U;
+    }
+};
+
+struct FramebufferStatistics {
+    std::uint64_t write_operations{};
+    std::uint64_t bytes_written{};
+    std::uint64_t dirty_region_updates{};
+};
+
 class Framebuffer final : public platform::Device {
   public:
     Framebuffer(
@@ -33,9 +51,12 @@ class Framebuffer final : public platform::Device {
     [[nodiscard]] std::uint32_t height() const noexcept;
     [[nodiscard]] std::uint32_t bytes_per_pixel() const noexcept;
     [[nodiscard]] bool dirty() const noexcept;
+    [[nodiscard]] FramebufferDirtyRegion dirty_region() const noexcept;
     void clear_dirty() noexcept;
 
     [[nodiscard]] std::span<const std::uint8_t> pixels() const noexcept;
+    [[nodiscard]] const FramebufferStatistics&
+    statistics() const noexcept;
 
   private:
     platform::AddressRange range_;
@@ -43,7 +64,8 @@ class Framebuffer final : public platform::Device {
     std::uint32_t height_{};
     std::uint32_t bytes_per_pixel_{};
     std::vector<std::uint8_t> pixels_;
-    bool dirty_{};
+    FramebufferDirtyRegion dirty_region_{};
+    FramebufferStatistics statistics_{};
 };
 
 } // namespace rv32::devices

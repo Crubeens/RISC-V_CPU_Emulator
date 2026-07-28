@@ -497,6 +497,46 @@ if(RV32_BUILD_TESTS)
         NAME rv32_mmu_tests
         COMMAND rv32_mmu_tests)
 
+    add_executable(
+        rv32_performance_runner
+        tests/performance/runner.cpp)
+
+    target_link_libraries(
+        rv32_performance_runner
+        PRIVATE
+            rv32_platform)
+
+    rv32_enable_warnings(rv32_performance_runner)
+
+    add_test(
+        NAME rv32_performance_smoke
+        COMMAND rv32_performance_runner 100000)
+    set_tests_properties(
+        rv32_performance_smoke
+        PROPERTIES
+            LABELS "performance"
+            TIMEOUT 30)
+
+    add_executable(
+        rv32_framebuffer_benchmark
+        tests/performance/framebuffer_runner.cpp)
+
+    target_link_libraries(
+        rv32_framebuffer_benchmark
+        PRIVATE
+            rv32_platform)
+
+    rv32_enable_warnings(rv32_framebuffer_benchmark)
+
+    add_test(
+        NAME rv32_framebuffer_performance_smoke
+        COMMAND rv32_framebuffer_benchmark --smoke)
+    set_tests_properties(
+        rv32_framebuffer_performance_smoke
+        PROPERTIES
+            LABELS "performance"
+            TIMEOUT 30)
+
     if(RV32_BUILD_BAREMETAL_TESTS)
         find_program(
             RV32_BAREMETAL_GCC
@@ -865,10 +905,18 @@ if(RV32_BUILD_TESTS)
                 function(
                     rv32_add_spike_differential_test
                     suite
-                    test_name)
+                    test_name
+                    mode)
+                    if(mode STREQUAL "reference")
+                        set(differential_mode_suffix "_reference")
+                        set(dut_mode_argument --reference-dut)
+                    else()
+                        set(differential_mode_suffix "")
+                        set(dut_mode_argument)
+                    endif()
                     set(
                         differential_name
-                        "rv32_spike_differential_${suite}_${test_name}")
+                        "rv32_spike_differential_${suite}_${test_name}${differential_mode_suffix}")
                     set(
                         differential_stem
                         "${suite}-${test_name}")
@@ -885,6 +933,7 @@ if(RV32_BUILD_TESTS)
                             "${RV32_ARCHITECTURE_OUTPUT_DIR}/${differential_stem}.elf"
                             --spike
                             "${RV32_SPIKE_EXECUTABLE}"
+                            ${dut_mode_argument}
                             --allow-spike-tail)
                     set_tests_properties(
                         "${differential_name}"
@@ -893,11 +942,15 @@ if(RV32_BUILD_TESTS)
                             TIMEOUT 45)
                 endfunction()
 
-                rv32_add_spike_differential_test(rv32ui simple)
-                rv32_add_spike_differential_test(rv32ui add)
-                rv32_add_spike_differential_test(rv32um mul)
-                rv32_add_spike_differential_test(rv32ua amoadd_w)
-                rv32_add_spike_differential_test(rv32uc rvc)
+                rv32_add_spike_differential_test(rv32ui simple fast)
+                rv32_add_spike_differential_test(rv32ui add fast)
+                rv32_add_spike_differential_test(rv32um mul fast)
+                rv32_add_spike_differential_test(rv32ua amoadd_w fast)
+                rv32_add_spike_differential_test(rv32uc rvc fast)
+                rv32_add_spike_differential_test(
+                    rv32ui
+                    simple
+                    reference)
             else()
                 message(
                     STATUS
