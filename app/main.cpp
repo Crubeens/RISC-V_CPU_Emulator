@@ -32,6 +32,7 @@
 #include "rv32/devices/uart16550.hpp"
 #include "rv32/devices/virtio_block.hpp"
 #include "rv32/platform/machine.hpp"
+#include "rv64/app/cli.hpp"
 
 namespace {
 
@@ -877,6 +878,23 @@ int run_framework_smoke()
 
 int main(int argc, char** argv)
 {
+    if (argc >= 2 && std::string_view(argv[1]) == "--cpu") {
+        if (argc < 3) {
+            std::cerr << "--cpu requires rv32 or rv64\n";
+            return 2;
+        }
+        const std::string_view cpu = argv[2];
+        if (cpu == "rv64") {
+            return rv64::app::run_cli(argc - 2, argv + 2);
+        }
+        if (cpu != "rv32") {
+            std::cerr << "Unknown CPU: " << cpu << '\n';
+            return 2;
+        }
+        argc -= 2;
+        argv += 2;
+    }
+
     if (argc == 1) {
         return run_framework_smoke();
     }
@@ -909,6 +927,7 @@ int main(int argc, char** argv)
     std::cerr
         << "usage:\n"
         << "  rv32_emulator\n"
+        << "  rv32_emulator --cpu rv32|rv64 [command]\n"
         << "  rv32_emulator --load-images "
         << "<opensbi.bin> <linux-image> <board.dtb>\n"
         << "  rv32_emulator --boot "

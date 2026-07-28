@@ -20,6 +20,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+add_library(rv_common INTERFACE)
+target_include_directories(
+    rv_common
+    INTERFACE
+        ${PROJECT_SOURCE_DIR}/common/include)
+
 find_program(
     RV32_DTC
     NAMES dtc
@@ -92,7 +98,21 @@ target_include_directories(
     PUBLIC
         ${PROJECT_SOURCE_DIR}/core/include)
 
+target_link_libraries(rv32_core PUBLIC rv_common)
 rv32_enable_warnings(rv32_core)
+
+add_library(
+    rv64_core
+    core64/src/core.cpp
+    core64/src/decode.cpp)
+
+target_include_directories(
+    rv64_core
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/core64/include)
+
+target_link_libraries(rv64_core PUBLIC rv_common)
+rv32_enable_warnings(rv64_core)
 
 add_library(
     rv32_platform
@@ -115,6 +135,34 @@ target_include_directories(
 
 target_link_libraries(rv32_platform PUBLIC rv32_core)
 rv32_enable_warnings(rv32_platform)
+
+add_library(
+    rv64_platform
+    platform64/src/machine.cpp)
+
+target_include_directories(
+    rv64_platform
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/platform64/include)
+
+target_link_libraries(
+    rv64_platform
+    PUBLIC
+        rv64_core
+        rv32_platform)
+rv32_enable_warnings(rv64_platform)
+
+add_library(
+    rv64_app
+    app/src/rv64_cli.cpp)
+
+target_include_directories(
+    rv64_app
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/app/include)
+
+target_link_libraries(rv64_app PUBLIC rv64_platform)
+rv32_enable_warnings(rv64_app)
 
 if(RV32_ENABLE_SDL)
     find_path(
@@ -163,13 +211,13 @@ add_executable(
     app/main.cpp)
 
 if(RV32_ENABLE_SDL)
-    target_link_libraries(rv32_emulator PRIVATE rv32_app)
+    target_link_libraries(rv32_emulator PRIVATE rv32_app rv64_app)
     target_compile_definitions(
         rv32_emulator
         PRIVATE
             RV32_ENABLE_SDL=1)
 else()
-    target_link_libraries(rv32_emulator PRIVATE rv32_platform)
+    target_link_libraries(rv32_emulator PRIVATE rv32_platform rv64_app)
 endif()
 rv32_enable_warnings(rv32_emulator)
 add_dependencies(rv32_emulator rv32_device_tree)
@@ -198,6 +246,36 @@ endif()
 if(RV32_BUILD_TESTS)
     enable_testing()
 
+    add_executable(
+        rv64_core_tests
+        tests/rv64_core_tests.cpp)
+
+    target_link_libraries(
+        rv64_core_tests
+        PRIVATE
+            rv64_core)
+
+    rv32_enable_warnings(rv64_core_tests)
+
+    add_test(
+        NAME rv64_core_tests
+        COMMAND rv64_core_tests)
+
+    add_executable(
+        rv64_platform_tests
+        tests/rv64_platform_tests.cpp)
+
+    target_link_libraries(
+        rv64_platform_tests
+        PRIVATE
+            rv64_platform)
+
+    rv32_enable_warnings(rv64_platform_tests)
+
+    add_test(
+        NAME rv64_platform_tests
+        COMMAND rv64_platform_tests)
+
     find_program(
         RV32_FDTGET
         NAMES fdtget
@@ -212,6 +290,10 @@ if(RV32_BUILD_TESTS)
     add_test(
         NAME rv32_emulator_smoke
         COMMAND rv32_emulator)
+
+    add_test(
+        NAME rv64_emulator_smoke
+        COMMAND rv32_emulator --cpu rv64)
 
     add_test(
         NAME rv32_device_tree_smoke
