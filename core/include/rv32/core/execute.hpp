@@ -140,7 +140,7 @@ struct CsrExecutionResult {
     std::uint32_t rs2_value) noexcept;
 
 // Executes AUIPC, jumps, and conditional branches without changing CPU state.
-// A taken target must satisfy RV32I IALIGN=32 before a commit is produced.
+// A taken target must satisfy RV32C IALIGN=16 before a commit is produced.
 [[nodiscard]] ControlFlowResult execute_control_flow(
     const DecodedInstruction& decoded,
     std::uint32_t pc,

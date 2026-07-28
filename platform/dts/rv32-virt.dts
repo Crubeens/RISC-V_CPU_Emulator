@@ -11,8 +11,21 @@
     };
 
     chosen {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
         stdout-path = "serial0:115200n8";
-        bootargs = "console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait";
+        bootargs = "console=tty0 console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait";
+
+        framebuffer@40000000 {
+            compatible = "simple-framebuffer";
+            reg = <0x0 0x40000000 0x0 0x0012c000>;
+            width = <640>;
+            height = <480>;
+            stride = <2560>;
+            format = "x8r8g8b8";
+            status = "okay";
+        };
     };
 
     cpus {
@@ -25,7 +38,7 @@
             reg = <0>;
             status = "okay";
             compatible = "riscv";
-            riscv,isa = "rv32ima_zicsr_zifencei";
+            riscv,isa = "rv32imac_zicsr_zifencei";
             mmu-type = "riscv,sv32";
             clock-frequency = <100000000>;
 

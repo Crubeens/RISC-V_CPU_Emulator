@@ -119,7 +119,7 @@ class ProgramBus final : public rv32::CpuBus {
             return next_load;
         }
         if (kind != rv32::AccessKind::InstructionFetch ||
-            width != rv32::AccessWidth::Word) {
+            width != rv32::AccessWidth::HalfWord) {
             return {.fault = rv32::BusFault::Unsupported};
         }
 
@@ -132,7 +132,7 @@ class ProgramBus final : public rv32::CpuBus {
         }
 
         const rv32::PhysAddr offset = address - base;
-        if ((offset & 0x3U) != 0U) {
+        if ((offset & 0x1U) != 0U) {
             return {.fault = rv32::BusFault::Misaligned};
         }
 
@@ -142,7 +142,10 @@ class ProgramBus final : public rv32::CpuBus {
         }
         return {
             .fault = rv32::BusFault::None,
-            .value = words[static_cast<std::size_t>(index)],
+            .value =
+                (words[static_cast<std::size_t>(index)] >>
+                 (static_cast<unsigned int>(offset & 0x2U) * 8U)) &
+                0xFFFFU,
         };
     }
 
@@ -255,7 +258,7 @@ void check_precise_machine_trap(
         before.machine_csrs.mideleg);
     CHECK(after.machine_csrs.mtvec == before.machine_csrs.mtvec);
     CHECK(after.machine_csrs.mscratch == before.machine_csrs.mscratch);
-    CHECK(after.machine_csrs.mepc == (before.pc & ~0x3U));
+    CHECK(after.machine_csrs.mepc == (before.pc & ~0x1U));
     CHECK(
         after.machine_csrs.mcause ==
         static_cast<std::uint32_t>(cause));
@@ -308,7 +311,7 @@ void test_register_values_flow_through_complete_steps()
     CHECK(state.registers[2] == 3U);
     CHECK(state.registers[3] == 8U);
     CHECK(state.instructions_retired == 4U);
-    CHECK(bus.read_count == 4U);
+    CHECK(bus.read_count == 8U);
     CHECK(bus.write_count == 0U);
 }
 
@@ -344,7 +347,7 @@ void test_m_extension_flows_through_complete_steps()
     CHECK(state.registers[4] == 6U);
     CHECK(state.pc == ProgramBus::base + 16U);
     CHECK(state.instructions_retired == 4U);
-    CHECK(bus.instruction_fetch_count == 4U);
+    CHECK(bus.instruction_fetch_count == 8U);
     CHECK(bus.load_count == 0U);
     CHECK(bus.store_count == 0U);
 }
@@ -353,21 +356,21 @@ void test_misaligned_pc_does_not_change_state()
 {
     ProgramBus bus;
     rv32::Core core(bus);
-    core.reset({.reset_pc = ProgramBus::base + 2U});
+    core.reset({.reset_pc = ProgramBus::base + 1U});
     const auto before = core.snapshot();
 
     const auto result = core.step({});
 
     CHECK(result.status == rv32::StepStatus::TrapTaken);
-    CHECK(result.pc == ProgramBus::base + 2U);
+    CHECK(result.pc == ProgramBus::base + 1U);
     CHECK(result.instruction == 0U);
-    CHECK(result.trap_value == ProgramBus::base + 2U);
+    CHECK(result.trap_value == ProgramBus::base + 1U);
     CHECK(result.bus_fault == rv32::BusFault::Misaligned);
     check_precise_machine_trap(
         core.snapshot(),
         before,
         rv32::ExceptionCause::InstructionAddressMisaligned,
-        ProgramBus::base + 2U);
+        ProgramBus::base + 1U);
     CHECK(bus.read_count == 0U);
 }
 
@@ -422,7 +425,7 @@ void test_illegal_instruction_does_not_change_state()
         before,
         rv32::ExceptionCause::IllegalInstruction,
         0xFFFFFFFFU);
-    CHECK(bus.read_count == 1U);
+    CHECK(bus.read_count == 2U);
 }
 
 void test_load_result_flows_into_store()
@@ -442,7 +445,7 @@ void test_load_result_flows_into_store()
     CHECK(core.snapshot().registers[1] == 0x89ABCDEFU);
     CHECK(core.snapshot().pc == ProgramBus::base + 4U);
     CHECK(core.snapshot().instructions_retired == 1U);
-    CHECK(bus.instruction_fetch_count == 1U);
+    CHECK(bus.instruction_fetch_count == 2U);
     CHECK(bus.load_count == 1U);
     CHECK(bus.store_count == 0U);
     CHECK(bus.last_data_address == 4U);
@@ -454,7 +457,7 @@ void test_load_result_flows_into_store()
     CHECK(core.snapshot().registers[1] == 0x89ABCDEFU);
     CHECK(core.snapshot().pc == ProgramBus::base + 8U);
     CHECK(core.snapshot().instructions_retired == 2U);
-    CHECK(bus.instruction_fetch_count == 2U);
+    CHECK(bus.instruction_fetch_count == 4U);
     CHECK(bus.load_count == 1U);
     CHECK(bus.store_count == 1U);
     CHECK(bus.last_data_address == 8U);
@@ -480,7 +483,7 @@ void test_data_misalignment_does_not_commit()
             before,
             rv32::ExceptionCause::LoadAddressMisaligned,
             2U);
-        CHECK(bus.instruction_fetch_count == 1U);
+        CHECK(bus.instruction_fetch_count == 2U);
         CHECK(bus.load_count == 0U);
         CHECK(bus.store_count == 0U);
     }
@@ -501,7 +504,7 @@ void test_data_misalignment_does_not_commit()
             before,
             rv32::ExceptionCause::StoreAddressMisaligned,
             2U);
-        CHECK(bus.instruction_fetch_count == 1U);
+        CHECK(bus.instruction_fetch_count == 2U);
         CHECK(bus.load_count == 0U);
         CHECK(bus.store_count == 0U);
     }
@@ -603,48 +606,39 @@ void test_control_flow_runs_through_complete_steps()
     CHECK(state.registers[5] == ProgramBus::base + 24U);
     CHECK(state.registers[6] == ProgramBus::base + 32U);
     CHECK(state.instructions_retired == expected_pcs.size());
-    CHECK(bus.instruction_fetch_count == expected_pcs.size());
+    CHECK(bus.instruction_fetch_count == expected_pcs.size() * 2U);
     CHECK(bus.load_count == 0U);
     CHECK(bus.store_count == 0U);
 }
 
-void test_control_target_misalignment_is_atomic()
+void test_halfword_control_targets_are_accepted()
 {
     {
         ProgramBus bus;
         bus.words[0] = encode_j(2U, 1U); // jal x1, +2
         rv32::Core core(bus);
-        const auto before = core.snapshot();
 
         const auto result = core.step({});
 
-        CHECK(result.status == rv32::StepStatus::TrapTaken);
-        CHECK(result.trap_value == ProgramBus::base + 2U);
+        CHECK(result.status == rv32::StepStatus::Retired);
+        CHECK(core.snapshot().pc == ProgramBus::base + 2U);
+        CHECK(
+            core.snapshot().registers[1] ==
+            ProgramBus::base + 4U);
         CHECK(result.bus_fault == rv32::BusFault::None);
-        check_precise_machine_trap(
-            core.snapshot(),
-            before,
-            rv32::ExceptionCause::InstructionAddressMisaligned,
-            ProgramBus::base + 2U);
-        CHECK(bus.instruction_fetch_count == 1U);
+        CHECK(bus.instruction_fetch_count == 2U);
     }
 
     {
         ProgramBus bus;
         bus.words[0] = encode_b(2U, 0U, 0U, 0U); // beq x0, x0, +2
         rv32::Core core(bus);
-        const auto before = core.snapshot();
 
         const auto result = core.step({});
 
-        CHECK(result.status == rv32::StepStatus::TrapTaken);
-        CHECK(result.trap_value == ProgramBus::base + 2U);
+        CHECK(result.status == rv32::StepStatus::Retired);
+        CHECK(core.snapshot().pc == ProgramBus::base + 2U);
         CHECK(result.bus_fault == rv32::BusFault::None);
-        check_precise_machine_trap(
-            core.snapshot(),
-            before,
-            rv32::ExceptionCause::InstructionAddressMisaligned,
-            ProgramBus::base + 2U);
     }
 
     {
@@ -664,18 +658,15 @@ void test_control_target_misalignment_is_atomic()
         bus.words[0] =
             encode_i(2U, 0U, 0U, 1U, 0x67U); // jalr x1, 2(x0)
         rv32::Core core(bus);
-        const auto before = core.snapshot();
 
         const auto result = core.step({});
 
-        CHECK(result.status == rv32::StepStatus::TrapTaken);
-        CHECK(result.trap_value == 2U);
+        CHECK(result.status == rv32::StepStatus::Retired);
+        CHECK(core.snapshot().pc == 2U);
+        CHECK(
+            core.snapshot().registers[1] ==
+            ProgramBus::base + 4U);
         CHECK(result.bus_fault == rv32::BusFault::None);
-        check_precise_machine_trap(
-            core.snapshot(),
-            before,
-            rv32::ExceptionCause::InstructionAddressMisaligned,
-            2U);
     }
 }
 
@@ -695,7 +686,7 @@ void test_fence_retires_through_complete_step()
     CHECK(core.snapshot().pc == ProgramBus::base + 4U);
     CHECK(core.snapshot().instructions_retired == 1U);
     CHECK(core.snapshot().registers[0] == 0U);
-    CHECK(bus.read_count == 1U);
+    CHECK(bus.read_count == 2U);
     CHECK(bus.write_count == 0U);
 }
 
@@ -738,7 +729,7 @@ void test_ecall_and_ebreak_are_precise_events()
             before,
             test.cause,
             test.trap_value);
-        CHECK(bus.instruction_fetch_count == 1U);
+        CHECK(bus.instruction_fetch_count == 2U);
         CHECK(bus.load_count == 0U);
         CHECK(bus.store_count == 0U);
     }
@@ -758,7 +749,7 @@ int main()
     test_data_misalignment_does_not_commit();
     test_data_bus_faults_do_not_commit();
     test_control_flow_runs_through_complete_steps();
-    test_control_target_misalignment_is_atomic();
+    test_halfword_control_targets_are_accepted();
     test_fence_retires_through_complete_step();
     test_ecall_and_ebreak_are_precise_events();
 

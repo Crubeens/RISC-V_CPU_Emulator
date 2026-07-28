@@ -68,21 +68,25 @@ class ProgramBus final : public rv32::CpuBus {
         rv32::AccessKind kind) override
     {
         if (kind != rv32::AccessKind::InstructionFetch ||
-            width != rv32::AccessWidth::Word) {
+            width != rv32::AccessWidth::HalfWord) {
             return {.fault = rv32::BusFault::Unsupported};
         }
-        if (address < base || (address & 0x3U) != 0U) {
+        if (address < base || (address & 0x1U) != 0U) {
             return {.fault = rv32::BusFault::Unmapped};
         }
 
-        const rv32::PhysAddr index = (address - base) / 4U;
+        const rv32::PhysAddr offset = address - base;
+        const rv32::PhysAddr index = offset / 4U;
         if (index >= words.size()) {
             return {.fault = rv32::BusFault::Unmapped};
         }
         ++instruction_fetch_count;
         return {
             .fault = rv32::BusFault::None,
-            .value = words[static_cast<std::size_t>(index)],
+            .value =
+                (words[static_cast<std::size_t>(index)] >>
+                 (static_cast<unsigned int>(offset & 0x2U) * 8U)) &
+                0xFFFFU,
         };
     }
 
@@ -501,14 +505,14 @@ void test_wfi_stall_wake_and_trap()
         CHECK(wfi.instruction == 0x10500073U);
         CHECK(core.snapshot().pc == ProgramBus::base + 12U);
         CHECK(core.snapshot().instructions_retired == 3U);
-        CHECK(bus.instruction_fetch_count == 3U);
+        CHECK(bus.instruction_fetch_count == 6U);
 
         const auto stalled = core.step({});
         CHECK(
             stalled.status ==
             rv32::StepStatus::WaitingForInterrupt);
         CHECK(stalled.pc == ProgramBus::base + 12U);
-        CHECK(bus.instruction_fetch_count == 3U);
+        CHECK(bus.instruction_fetch_count == 6U);
         CHECK(core.snapshot().instructions_retired == 3U);
 
         const auto woke = core.step({.machine_timer = true});
@@ -516,7 +520,7 @@ void test_wfi_stall_wake_and_trap()
         CHECK(core.snapshot().registers[2] == 7U);
         CHECK(core.snapshot().pc == ProgramBus::base + 16U);
         CHECK(core.snapshot().instructions_retired == 4U);
-        CHECK(bus.instruction_fetch_count == 4U);
+        CHECK(bus.instruction_fetch_count == 8U);
     }
 
     {
@@ -553,7 +557,7 @@ void test_wfi_stall_wake_and_trap()
               ProgramBus::base + 16U);
         CHECK(core.snapshot().machine_csrs.mcause == 0x80000007U);
         CHECK(core.snapshot().instructions_retired == 4U);
-        CHECK(bus.instruction_fetch_count == 4U);
+        CHECK(bus.instruction_fetch_count == 8U);
     }
 }
 

@@ -1,4 +1,5 @@
 /build/
+/boot-images/
 /prestudy/rv32_cpu_base/build-ninja/
 /.cache/
 /.idea/

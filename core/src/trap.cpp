@@ -68,7 +68,7 @@ void take_supervisor_trap(
     }
 
     next.machine_csrs.mstatus = sanitize_mstatus(mstatus);
-    next.supervisor_csrs.sepc = request.exception_pc & ~0x3U;
+    next.supervisor_csrs.sepc = request.exception_pc & ~0x1U;
     next.supervisor_csrs.scause =
         static_cast<std::uint32_t>(request.cause);
     next.supervisor_csrs.stval = request.trap_value;
@@ -125,8 +125,7 @@ void take_machine_trap(
         << mstatus_bits::mpp_shift;
 
     next.machine_csrs.mstatus = sanitize_mstatus(mstatus);
-    // This core has IALIGN=32 until the C extension is added.
-    next.machine_csrs.mepc = request.exception_pc & ~0x3U;
+    next.machine_csrs.mepc = request.exception_pc & ~0x1U;
     next.machine_csrs.mcause =
         static_cast<std::uint32_t>(request.cause);
     next.machine_csrs.mtval = request.trap_value;
@@ -168,7 +167,7 @@ void take_interrupt_trap(
 
         next.machine_csrs.mstatus = sanitize_mstatus(mstatus);
         next.supervisor_csrs.sepc =
-            request.interrupted_pc & ~0x3U;
+            request.interrupted_pc & ~0x1U;
         next.supervisor_csrs.scause = 0x80000000U | cause;
         next.supervisor_csrs.stval = 0;
         next.pc = trap_vector_address(
@@ -191,7 +190,7 @@ void take_interrupt_trap(
 
         next.machine_csrs.mstatus = sanitize_mstatus(mstatus);
         next.machine_csrs.mepc =
-            request.interrupted_pc & ~0x3U;
+            request.interrupted_pc & ~0x1U;
         next.machine_csrs.mcause = 0x80000000U | cause;
         next.machine_csrs.mtval = 0;
         next.pc = trap_vector_address(
@@ -266,7 +265,7 @@ PrivilegedExecutionResult execute_privileged(
                 .status = ExecuteStatus::Ready,
                 .pc = state.pc,
                 .instruction = decoded.raw,
-                .next_pc = state.pc + 4U,
+                .next_pc = state.pc + decoded.length,
             },
             .trap_value = 0,
         };
@@ -291,7 +290,7 @@ PrivilegedExecutionResult execute_privileged(
                 .status = ExecuteStatus::Ready,
                 .pc = state.pc,
                 .instruction = decoded.raw,
-                .next_pc = state.pc + 4U,
+                .next_pc = state.pc + decoded.length,
                 .register_write = {},
                 .csr_write = {},
                 .privilege_write = {},

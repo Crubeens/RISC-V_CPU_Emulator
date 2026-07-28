@@ -34,7 +34,7 @@ assert_fdt_property(
     "/cpus/cpu@0"
     "riscv,isa"
     "s"
-    "rv32ima_zicsr_zifencei")
+    "rv32imac_zicsr_zifencei")
 assert_fdt_property(
     "/cpus/cpu@0"
     "mmu-type"
@@ -94,4 +94,39 @@ assert_fdt_property(
     "/chosen"
     "bootargs"
     "s"
-    "console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait")
+    "console=tty0 console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait")
+assert_fdt_property(
+    "/chosen"
+    "ranges"
+    "x"
+    "")
+assert_fdt_property(
+    "/chosen/framebuffer@40000000"
+    "compatible"
+    "s"
+    "simple-framebuffer")
+assert_fdt_property(
+    "/chosen/framebuffer@40000000"
+    "reg"
+    "x"
+    "0 40000000 0 12c000")
+assert_fdt_property(
+    "/chosen/framebuffer@40000000"
+    "width"
+    "u"
+    "640")
+assert_fdt_property(
+    "/chosen/framebuffer@40000000"
+    "height"
+    "u"
+    "480")
+assert_fdt_property(
+    "/chosen/framebuffer@40000000"
+    "stride"
+    "u"
+    "2560")
+assert_fdt_property(
+    "/chosen/framebuffer@40000000"
+    "format"
+    "s"
+    "x8r8g8b8")

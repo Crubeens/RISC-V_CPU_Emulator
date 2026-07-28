@@ -429,7 +429,7 @@ void CsrFile::write_validated(
         state_->supervisor_csrs.sscratch = value;
         break;
     case csr_address::sepc:
-        state_->supervisor_csrs.sepc = value & ~0x3U;
+        state_->supervisor_csrs.sepc = value & ~0x1U;
         break;
     case csr_address::scause:
         state_->supervisor_csrs.scause = value;
@@ -483,8 +483,7 @@ void CsrFile::write_validated(
         state_->machine_csrs.mscratch = value;
         break;
     case csr_address::mepc:
-        // IALIGN=32 until the C extension is implemented.
-        state_->machine_csrs.mepc = value & ~0x3U;
+        state_->machine_csrs.mepc = value & ~0x1U;
         break;
     case csr_address::mcause:
         state_->machine_csrs.mcause = value;

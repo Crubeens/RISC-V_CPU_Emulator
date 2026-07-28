@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -321,6 +322,22 @@ void test_uart_syscon_and_framebuffer()
     CHECK(!framebuffer.dirty());
 }
 
+void test_framebuffer_rejects_overflowing_dimensions()
+{
+    bool rejected = false;
+    try {
+        rv32::devices::Framebuffer framebuffer(
+            0x40000000ULL,
+            std::numeric_limits<std::uint32_t>::max(),
+            std::numeric_limits<std::uint32_t>::max(),
+            std::numeric_limits<std::uint32_t>::max());
+        static_cast<void>(framebuffer);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    CHECK(rejected);
+}
+
 void test_virtio_block_read()
 {
     constexpr PhysAddr ram_base = 0x80000000ULL;
@@ -611,7 +628,7 @@ void test_machine_framework()
     CHECK(snapshot.registers[0] == 0U);
     CHECK(
         rv32::Core::isa_string() ==
-        "rv32ima_zicntr_zicsr_zifencei");
+        "rv32imac_zicntr_zicsr_zifencei");
     CHECK(machine.device_map().size() == 7U);
 
     const auto result = machine.step(3);
@@ -890,6 +907,7 @@ int main()
     test_clint();
     test_plic();
     test_uart_syscon_and_framebuffer();
+    test_framebuffer_rejects_overflowing_dimensions();
     test_virtio_block_read();
     test_machine_framework();
     test_machine_executes_load_and_store_through_ram();

@@ -63,12 +63,12 @@ class ProgramBus final : public rv32::CpuBus {
         rv32::AccessKind kind) override
     {
         if (kind != rv32::AccessKind::InstructionFetch ||
-            width != rv32::AccessWidth::Word ||
+            width != rv32::AccessWidth::HalfWord ||
             address < base) {
             return {.fault = rv32::BusFault::Unmapped};
         }
         const rv32::PhysAddr offset = address - base;
-        if ((offset & 0x3U) != 0U) {
+        if ((offset & 0x1U) != 0U) {
             return {.fault = rv32::BusFault::Misaligned};
         }
         const rv32::PhysAddr index = offset / 4U;
@@ -77,7 +77,10 @@ class ProgramBus final : public rv32::CpuBus {
         }
         return {
             .fault = rv32::BusFault::None,
-            .value = words[static_cast<std::size_t>(index)],
+            .value =
+                (words[static_cast<std::size_t>(index)] >>
+                 (static_cast<unsigned int>(offset & 0x2U) * 8U)) &
+                0xFFFFU,
         };
     }
 
@@ -171,7 +174,7 @@ void test_supervisor_csrs_and_delegation_masks()
     csrs.write_validated(rv32::csr_address::scause, 0x80000009U);
     csrs.write_validated(rv32::csr_address::stval, 0x33334444U);
     CHECK(state.supervisor_csrs.stvec == ProgramBus::base + 0x80U);
-    CHECK(state.supervisor_csrs.sepc == ProgramBus::base + 0x40U);
+    CHECK(state.supervisor_csrs.sepc == ProgramBus::base + 0x42U);
     CHECK(state.supervisor_csrs.sscratch == 0x11112222U);
     CHECK(state.supervisor_csrs.scause == 0x80000009U);
     CHECK(state.supervisor_csrs.stval == 0x33334444U);

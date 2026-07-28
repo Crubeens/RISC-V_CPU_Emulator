@@ -99,7 +99,7 @@ void test_jumps_write_link_and_validate_the_target()
     CHECK(jalr.pending.register_write.value == pc + 4U);
 
     const auto bad_jal = rv32::execute_control_flow(
-        make_decoded(rv32::InstructionKind::Jal, 7U, 2U),
+        make_decoded(rv32::InstructionKind::Jal, 7U, 1U),
         pc,
         0,
         0);
@@ -108,19 +108,17 @@ void test_jumps_write_link_and_validate_the_target()
         rv32::ControlFlowStatus::InstructionAddressMisaligned);
     CHECK(!bad_jal.pending.ready());
     CHECK(!bad_jal.pending.register_write.enabled);
-    CHECK(bad_jal.trap_value == pc + 2U);
+    CHECK(bad_jal.trap_value == pc + 1U);
 
-    const auto bad_jalr = rv32::execute_control_flow(
+    const auto aligned_jalr = rv32::execute_control_flow(
         make_decoded(rv32::InstructionKind::Jalr, 7U, 0U),
         pc,
         0x80000203U,
         0);
-    CHECK(
-        bad_jalr.status ==
-        rv32::ControlFlowStatus::InstructionAddressMisaligned);
-    CHECK(!bad_jalr.pending.ready());
-    CHECK(!bad_jalr.pending.register_write.enabled);
-    CHECK(bad_jalr.trap_value == 0x80000202U);
+    CHECK(aligned_jalr.ready());
+    CHECK(aligned_jalr.pending.next_pc == 0x80000202U);
+    CHECK(aligned_jalr.pending.register_write.enabled);
+    CHECK(aligned_jalr.pending.register_write.value == pc + 4U);
 }
 
 struct BranchCase {
@@ -235,7 +233,7 @@ void test_each_taken_branch_checks_alignment()
 
     for (const auto& test : cases) {
         const auto taken = rv32::execute_control_flow(
-            make_decoded(test.kind, 0, 2U),
+            make_decoded(test.kind, 0, 1U),
             pc,
             test.rs1,
             test.rs2);
@@ -243,7 +241,7 @@ void test_each_taken_branch_checks_alignment()
             taken.status ==
             rv32::ControlFlowStatus::InstructionAddressMisaligned);
         CHECK(!taken.pending.ready());
-        CHECK(taken.trap_value == pc + 2U);
+        CHECK(taken.trap_value == pc + 1U);
     }
 
     const auto decoded =

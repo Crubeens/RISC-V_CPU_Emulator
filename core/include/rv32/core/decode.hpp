@@ -97,6 +97,7 @@ struct DecodedInstruction {
     bool acquire{};
     bool release{};
     std::uint16_t csr{};
+    std::uint8_t length{4};
 
     [[nodiscard]] constexpr bool valid() const noexcept
     {
@@ -133,5 +134,8 @@ struct DecodedInstruction {
 
 [[nodiscard]] DecodedInstruction decode_instruction(
     std::uint32_t instruction) noexcept;
+
+[[nodiscard]] DecodedInstruction decode_compressed_instruction(
+    std::uint16_t instruction) noexcept;
 
 } // namespace rv32

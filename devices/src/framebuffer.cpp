@@ -24,6 +24,11 @@ Framebuffer::Framebuffer(
     const auto pixel_count =
         static_cast<std::uint64_t>(width) *
         static_cast<std::uint64_t>(height);
+    if (pixel_count >
+        std::numeric_limits<std::uint64_t>::max() /
+            static_cast<std::uint64_t>(bytes_per_pixel)) {
+        throw std::invalid_argument("framebuffer is too large");
+    }
     const auto byte_count =
         pixel_count * static_cast<std::uint64_t>(bytes_per_pixel);
 

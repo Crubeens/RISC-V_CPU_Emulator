@@ -2,37 +2,35 @@
 
 这是一个以自研 RV32 CPU 核心为中心、外设可替换的整机模拟器项目。
 
-当前版本为 **M4 基线版**：已经完成 RV32IMA、Zicsr、Zifencei、
-Zicntr、M/S/U 特权级、异常与中断以及 Sv32；下一阶段为
-OpenSBI 和 Linux 串口启动。
+当前版本为 **M7 基线版**：能够运行 RV32IMAC 裸机程序，通过适用的
+官方 `riscv-tests` I/M/A/C 用例，并通过 OpenSBI 启动 Linux、挂载
+VirtIO ext4 根文件系统。SDL 窗口可以显示 UART 终端或线性
+Framebuffer，键盘输入会送入虚拟 UART。
 
 ## 当前包含
 
 - 完整 RV32I 取指、译码、执行、访存和精确提交。
-- RV32M 乘除法与 RV32A Word 原子指令。
+- RV32M 乘除法、RV32A Word 原子指令和完整整数 RV32C 压缩指令。
+- 16 位对齐取指、跨 4 字节边界取指以及跨页第二半字异常处理。
 - Zicsr、Zifencei 和 64 位 Zicntr 计数器。
 - M/S/U 特权级、Trap 委托、`MRET`、`SRET` 和 `WFI`。
 - 无 TLB 的 Sv32 两级页表、4 KiB 页和 4 MiB 超级页。
 - `SUM`、`MXR`、`MPRV`、A/D 位更新和 `SFENCE.VMA`。
-- Instruction/Load/Store Page Fault 与页表 Access Fault。
-- 六条 M/S 软件、定时器、外部中断输入线及向量入口。
-- 独立的 `rv32_core`，只通过抽象总线和中断线连接平台。
-- 统一物理地址总线、DMA、LR/SC 和 AMO 接口。
 - RAM、CLINT、PLIC、NS16550A UART、Legacy VirtIO MMIO Block、
-  SYSCON 和线性 Framebuffer。
-- 整机 `Machine` 装配层和 RV32I 交叉编译裸机测试。
+  SYSCON 和 640×480 XRGB8888 Framebuffer。
+- OpenSBI/Linux 固定启动布局、DTB、VirtIO ext4 根文件系统和磁盘回写。
+- SDL2 图形窗口、80×30 UART 终端、Framebuffer 视图和键盘输入。
+- 60 个适用于本机配置的官方 `riscv-tests` RV32 I/M/A/C 用例。
 - Debug/Release 自动测试。
 
-## 当前不包含
-
-- OpenSBI/Linux 启动。
-- VirtIO 根文件系统启动与磁盘持久化流程。
-- C 压缩指令扩展。
-- SDL 图形窗口。
-
-后续内容按照 [PROJECT_PLAN.md](PROJECT_PLAN.md) 的固定阶段继续实现。
+CPU 核心位于 `core/`，只依赖抽象总线和中断线，不依赖 SDL 或任何
+具体外设实现。
 
 ## 构建
+
+需要 CMake、Ninja、Clang、DTC、SDL2 开发库以及
+`riscv32-unknown-elf-gcc/objcopy`。Windows 默认会从
+`C:\msys64\ucrt64` 查找 MSYS2 UCRT64 依赖。
 
 ```text
 cmake --preset debug
@@ -44,20 +42,55 @@ cmake --build --preset release
 ctest --preset release
 ```
 
-命令行演示程序：
+只运行官方架构测试：
 
 ```text
-build/debug/rv32_emulator
+ctest --preset debug -L architecture
 ```
+
+## 启动 Linux
+
+串口加持久化虚拟磁盘：
+
+```powershell
+build/release/rv32_emulator.exe --boot-disk `
+  boot-images/opensbi-v1.8.1-rv32-fw_jump.bin `
+  boot-images/linux-v6.12.96-rv32ima-Image `
+  build/release/images/rv32-virt.dtb `
+  boot-images/buildroot-2025.02.16-rv32ima-rootfs.ext4
+```
+
+启用图形窗口只需在启动模式前增加 `--gui`：
+
+```powershell
+build/release/rv32_emulator.exe --gui --boot-disk `
+  boot-images/opensbi-v1.8.1-rv32-fw_jump.bin `
+  boot-images/linux-v6.12.96-rv32ima-Image `
+  build/release/images/rv32-virt.dtb `
+  boot-images/buildroot-2025.02.16-rv32ima-rootfs.ext4
+```
+
+- `F1`：UART 终端。
+- `F2`：Linux/裸机 Framebuffer。
+- `F2` 显示的是客户机实际写入的显存，不是 `F1` 的复制画面。Linux
+  内核必须内建 `CONFIG_FB=y`、`CONFIG_FB_SIMPLE=y`、
+  `CONFIG_FRAMEBUFFER_CONSOLE=y`、`CONFIG_VT=y` 和
+  `CONFIG_VT_CONSOLE=y`；否则 Framebuffer 保持全黑。
+- 关闭 SDL 窗口不会强制中断客户机，模拟器会继续使用宿主终端。
+- 最后可追加正整数作为最大 machine-step 数；省略时
+  `--boot-disk` 持续运行到客户机请求关机。
 
 ## 目录
 
 ```text
-core/       自研 CPU 核心
-platform/   总线和整机装配
-devices/    可替换外设模型
-app/        命令行入口
-tests/      自动测试
-docs/       原有学习资料（保持不动）
-prestudy/   原有前置学习代码（保持不动）
+core/          自研 CPU 核心
+platform/      总线、启动布局和整机装配
+devices/       可替换外设模型
+app/           命令行与 SDL 前端
+tests/         单元、裸机、架构和整机测试
+third_party/   固定版本的测试依赖
+docs/          原有学习资料
+prestudy/      原有前置学习代码
 ```
+
+后续内容按照 [PROJECT_PLAN.md](PROJECT_PLAN.md) 的固定阶段继续实现。

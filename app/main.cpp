@@ -6,7 +6,9 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
@@ -16,6 +18,10 @@
 #else
 #include <sys/select.h>
 #include <unistd.h>
+#endif
+
+#if defined(RV32_ENABLE_SDL)
+#include "rv32/app/sdl_frontend.hpp"
 #endif
 
 #include "rv32/core/core.hpp"
@@ -286,12 +292,14 @@ bool parse_step_limit(
            step_limit != 0;
 }
 
-void flush_uart(rv32::platform::Machine& machine)
+[[nodiscard]] std::string flush_uart(
+    rv32::platform::Machine& machine)
 {
-    const auto output = machine.uart().take_transmitted();
+    auto output = machine.uart().take_transmitted();
     if (!output.empty()) {
         std::cout << output << std::flush;
     }
+    return output;
 }
 
 void forward_console_input(rv32::platform::Machine& machine)
@@ -477,7 +485,8 @@ void print_cpu_diagnostics(rv32::platform::Machine& machine)
 int run_boot(
     int argc,
     char** argv,
-    bool use_virtual_disk)
+    bool use_virtual_disk,
+    bool use_gui)
 {
     const int required_arguments = use_virtual_disk ? 6 : 5;
     if (argc != required_arguments &&
@@ -563,12 +572,51 @@ int run_boot(
                        : 7;
         };
 
+#if defined(RV32_ENABLE_SDL)
+    std::unique_ptr<rv32::app::SdlFrontend> gui;
+    if (use_gui) {
+        gui = std::make_unique<rv32::app::SdlFrontend>();
+        if (!gui->ready()) {
+            std::cerr
+                << "Cannot start SDL graphical frontend: "
+                << gui->error() << '\n';
+            return finish(8);
+        }
+        gui->present(machine.framebuffer());
+        std::cout
+            << "SDL window enabled: F1=UART terminal, "
+            << "F2=framebuffer.\n";
+    }
+#else
+    if (use_gui) {
+        std::cerr
+            << "This build does not include SDL graphical support.\n";
+        return finish(8);
+    }
+#endif
+
     for (std::uint64_t step = 0; step < step_limit; ++step) {
         if ((step % console_poll_interval) == 0U) {
             forward_console_input(machine);
+#if defined(RV32_ENABLE_SDL)
+            if (gui != nullptr && gui->active()) {
+                const auto input = gui->poll_input();
+                if (!input.empty()) {
+                    machine.uart().inject_received(input);
+                }
+                gui->present(machine.framebuffer());
+            }
+#endif
         }
         const auto result = machine.step();
-        flush_uart(machine);
+        const auto uart_output = flush_uart(machine);
+#if defined(RV32_ENABLE_SDL)
+        if (gui != nullptr && !uart_output.empty()) {
+            gui->append_uart(uart_output);
+        }
+#else
+        static_cast<void>(uart_output);
+#endif
 
         const auto action = machine.syscon().requested_action();
         if (action != rv32::devices::SystemAction::None) {
@@ -595,7 +643,20 @@ int run_boot(
         }
     }
 
-    flush_uart(machine);
+    const auto uart_output = flush_uart(machine);
+#if defined(RV32_ENABLE_SDL)
+    if (gui != nullptr) {
+        if (!uart_output.empty()) {
+            gui->append_uart(uart_output);
+        }
+        if (gui->active()) {
+            static_cast<void>(gui->poll_input());
+            gui->present(machine.framebuffer());
+        }
+    }
+#else
+    static_cast<void>(uart_output);
+#endif
     const auto state = machine.core().snapshot();
     std::cerr
         << "\nMachine-step limit reached; retired="
@@ -662,14 +723,30 @@ int main(int argc, char** argv)
     if (argc == 1) {
         return run_framework_smoke();
     }
+
+    if (std::string_view(argv[1]) == "--gui") {
+        if (argc >= 3 &&
+            std::string_view(argv[2]) == "--boot") {
+            return run_boot(argc - 1, argv + 1, false, true);
+        }
+        if (argc >= 3 &&
+            std::string_view(argv[2]) == "--boot-disk") {
+            return run_boot(argc - 1, argv + 1, true, true);
+        }
+
+        std::cerr
+            << "--gui must be followed by --boot or --boot-disk\n";
+        return 2;
+    }
+
     if (std::string_view(argv[1]) == "--load-images") {
         return load_boot_images(argc, argv);
     }
     if (std::string_view(argv[1]) == "--boot") {
-        return run_boot(argc, argv, false);
+        return run_boot(argc, argv, false, false);
     }
     if (std::string_view(argv[1]) == "--boot-disk") {
-        return run_boot(argc, argv, true);
+        return run_boot(argc, argv, true, false);
     }
 
     std::cerr
@@ -681,6 +758,13 @@ int main(int argc, char** argv)
         << "<opensbi.bin> <linux-image> <board.dtb> "
         << "[max-steps]\n"
         << "  rv32_emulator --boot-disk "
+        << "<opensbi.bin> <linux-image> <board.dtb> "
+        << "<disk-image> "
+        << "[max-steps]\n"
+        << "  rv32_emulator --gui --boot "
+        << "<opensbi.bin> <linux-image> <board.dtb> "
+        << "[max-steps]\n"
+        << "  rv32_emulator --gui --boot-disk "
         << "<opensbi.bin> <linux-image> <board.dtb> "
         << "<disk-image> "
         << "[max-steps]\n";

@@ -22,6 +22,8 @@ constexpr std::uint32_t opcode_system = 0x73U;
 constexpr std::uint32_t funct7_base = 0x00U;
 constexpr std::uint32_t funct7_multiply_divide = 0x01U;
 constexpr std::uint32_t funct7_alternate = 0x20U;
+constexpr std::uint8_t compressed_instruction_length = 2U;
+constexpr std::uint8_t standard_instruction_length = 4U;
 
 [[nodiscard]] constexpr DecodedInstruction make_decoded(
     std::uint32_t raw,
@@ -32,7 +34,8 @@ constexpr std::uint32_t funct7_alternate = 0x20U;
     std::uint32_t immediate = 0,
     bool acquire = false,
     bool release = false,
-    std::uint16_t csr = 0) noexcept
+    std::uint16_t csr = 0,
+    std::uint8_t length = standard_instruction_length) noexcept
 {
     return {
         .kind = kind,
@@ -44,7 +47,35 @@ constexpr std::uint32_t funct7_alternate = 0x20U;
         .acquire = acquire,
         .release = release,
         .csr = csr,
+        .length = length,
     };
+}
+
+[[nodiscard]] constexpr std::uint32_t compressed_register(
+    std::uint32_t value) noexcept
+{
+    return 8U + value;
+}
+
+[[nodiscard]] constexpr DecodedInstruction make_compressed(
+    std::uint16_t raw,
+    InstructionKind kind,
+    std::uint32_t rd = 0,
+    std::uint32_t rs1 = 0,
+    std::uint32_t rs2 = 0,
+    std::uint32_t immediate = 0) noexcept
+{
+    return make_decoded(
+        raw,
+        kind,
+        rd,
+        rs1,
+        rs2,
+        immediate,
+        false,
+        false,
+        0,
+        compressed_instruction_length);
 }
 
 } // namespace
@@ -534,6 +565,349 @@ DecodedInstruction decode_instruction(
             return illegal;
         }
 
+    default:
+        return illegal;
+    }
+}
+
+DecodedInstruction decode_compressed_instruction(
+    std::uint16_t instruction) noexcept
+{
+    const std::uint32_t raw = instruction;
+    const DecodedInstruction illegal = make_compressed(
+        instruction,
+        InstructionKind::Illegal);
+    const std::uint32_t quadrant = get_bits(raw, 1U, 0U);
+    const std::uint32_t funct3 = get_bits(raw, 15U, 13U);
+
+    if (quadrant == 0x3U) {
+        return illegal;
+    }
+
+    if (quadrant == 0x0U) {
+        switch (funct3) {
+        case 0x0U: {
+            const std::uint32_t immediate =
+                (get_bits(raw, 6U, 6U) << 2U) |
+                (get_bits(raw, 5U, 5U) << 3U) |
+                (get_bits(raw, 12U, 11U) << 4U) |
+                (get_bits(raw, 10U, 7U) << 6U);
+            if (immediate == 0U) {
+                return illegal;
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Addi,
+                compressed_register(get_bits(raw, 4U, 2U)),
+                2U,
+                0U,
+                immediate);
+        }
+        case 0x2U: {
+            const std::uint32_t immediate =
+                (get_bits(raw, 6U, 6U) << 2U) |
+                (get_bits(raw, 12U, 10U) << 3U) |
+                (get_bits(raw, 5U, 5U) << 6U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Lw,
+                compressed_register(get_bits(raw, 4U, 2U)),
+                compressed_register(get_bits(raw, 9U, 7U)),
+                0U,
+                immediate);
+        }
+        case 0x6U: {
+            const std::uint32_t immediate =
+                (get_bits(raw, 6U, 6U) << 2U) |
+                (get_bits(raw, 12U, 10U) << 3U) |
+                (get_bits(raw, 5U, 5U) << 6U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Sw,
+                0U,
+                compressed_register(get_bits(raw, 9U, 7U)),
+                compressed_register(get_bits(raw, 4U, 2U)),
+                immediate);
+        }
+        default:
+            return illegal;
+        }
+    }
+
+    if (quadrant == 0x1U) {
+        const std::uint32_t immediate6 = sign_extend(
+            (get_bits(raw, 12U, 12U) << 5U) |
+                get_bits(raw, 6U, 2U),
+            6U);
+
+        switch (funct3) {
+        case 0x0U: {
+            const std::uint32_t rd = get_bits(raw, 11U, 7U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Addi,
+                rd,
+                rd,
+                0U,
+                immediate6);
+        }
+        case 0x1U: {
+            const std::uint32_t immediate = sign_extend(
+                (get_bits(raw, 5U, 3U) << 1U) |
+                    (get_bits(raw, 11U, 11U) << 4U) |
+                    (get_bits(raw, 2U, 2U) << 5U) |
+                    (get_bits(raw, 7U, 7U) << 6U) |
+                    (get_bits(raw, 6U, 6U) << 7U) |
+                    (get_bits(raw, 10U, 9U) << 8U) |
+                    (get_bits(raw, 8U, 8U) << 10U) |
+                    (get_bits(raw, 12U, 12U) << 11U),
+                12U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Jal,
+                1U,
+                0U,
+                0U,
+                immediate);
+        }
+        case 0x2U:
+            return make_compressed(
+                instruction,
+                InstructionKind::Addi,
+                get_bits(raw, 11U, 7U),
+                0U,
+                0U,
+                immediate6);
+        case 0x3U: {
+            const std::uint32_t rd = get_bits(raw, 11U, 7U);
+            if (rd == 2U) {
+                const std::uint32_t immediate = sign_extend(
+                    (get_bits(raw, 6U, 6U) << 4U) |
+                        (get_bits(raw, 2U, 2U) << 5U) |
+                        (get_bits(raw, 5U, 5U) << 6U) |
+                        (get_bits(raw, 4U, 3U) << 7U) |
+                        (get_bits(raw, 12U, 12U) << 9U),
+                    10U);
+                if (immediate == 0U) {
+                    return illegal;
+                }
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Addi,
+                    2U,
+                    2U,
+                    0U,
+                    immediate);
+            }
+            if (immediate6 == 0U) {
+                return illegal;
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Lui,
+                rd,
+                0U,
+                0U,
+                immediate6 << 12U);
+        }
+        case 0x4U: {
+            const std::uint32_t operation =
+                get_bits(raw, 11U, 10U);
+            const std::uint32_t rd =
+                compressed_register(get_bits(raw, 9U, 7U));
+
+            if (operation == 0x0U || operation == 0x1U) {
+                if (get_bits(raw, 12U, 12U) != 0U) {
+                    return illegal;
+                }
+                return make_compressed(
+                    instruction,
+                    operation == 0x0U
+                        ? InstructionKind::Srli
+                        : InstructionKind::Srai,
+                    rd,
+                    rd,
+                    0U,
+                    get_bits(raw, 6U, 2U));
+            }
+            if (operation == 0x2U) {
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Andi,
+                    rd,
+                    rd,
+                    0U,
+                    immediate6);
+            }
+            if (get_bits(raw, 12U, 12U) != 0U) {
+                return illegal;
+            }
+
+            const std::uint32_t rs2 =
+                compressed_register(get_bits(raw, 4U, 2U));
+            switch (get_bits(raw, 6U, 5U)) {
+            case 0x0U:
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Sub,
+                    rd,
+                    rd,
+                    rs2);
+            case 0x1U:
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Xor,
+                    rd,
+                    rd,
+                    rs2);
+            case 0x2U:
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Or,
+                    rd,
+                    rd,
+                    rs2);
+            case 0x3U:
+                return make_compressed(
+                    instruction,
+                    InstructionKind::And,
+                    rd,
+                    rd,
+                    rs2);
+            default:
+                return illegal;
+            }
+        }
+        case 0x5U: {
+            const std::uint32_t immediate = sign_extend(
+                (get_bits(raw, 5U, 3U) << 1U) |
+                    (get_bits(raw, 11U, 11U) << 4U) |
+                    (get_bits(raw, 2U, 2U) << 5U) |
+                    (get_bits(raw, 7U, 7U) << 6U) |
+                    (get_bits(raw, 6U, 6U) << 7U) |
+                    (get_bits(raw, 10U, 9U) << 8U) |
+                    (get_bits(raw, 8U, 8U) << 10U) |
+                    (get_bits(raw, 12U, 12U) << 11U),
+                12U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Jal,
+                0U,
+                0U,
+                0U,
+                immediate);
+        }
+        case 0x6U:
+        case 0x7U: {
+            const std::uint32_t immediate = sign_extend(
+                (get_bits(raw, 4U, 3U) << 1U) |
+                    (get_bits(raw, 11U, 10U) << 3U) |
+                    (get_bits(raw, 2U, 2U) << 5U) |
+                    (get_bits(raw, 6U, 5U) << 6U) |
+                    (get_bits(raw, 12U, 12U) << 8U),
+                9U);
+            return make_compressed(
+                instruction,
+                funct3 == 0x6U
+                    ? InstructionKind::Beq
+                    : InstructionKind::Bne,
+                0U,
+                compressed_register(get_bits(raw, 9U, 7U)),
+                0U,
+                immediate);
+        }
+        default:
+            return illegal;
+        }
+    }
+
+    switch (funct3) {
+    case 0x0U: {
+        if (get_bits(raw, 12U, 12U) != 0U) {
+            return illegal;
+        }
+        const std::uint32_t rd = get_bits(raw, 11U, 7U);
+        return make_compressed(
+            instruction,
+            InstructionKind::Slli,
+            rd,
+            rd,
+            0U,
+            get_bits(raw, 6U, 2U));
+    }
+    case 0x2U: {
+        const std::uint32_t rd = get_bits(raw, 11U, 7U);
+        if (rd == 0U) {
+            return illegal;
+        }
+        const std::uint32_t immediate =
+            (get_bits(raw, 6U, 4U) << 2U) |
+            (get_bits(raw, 12U, 12U) << 5U) |
+            (get_bits(raw, 3U, 2U) << 6U);
+        return make_compressed(
+            instruction,
+            InstructionKind::Lw,
+            rd,
+            2U,
+            0U,
+            immediate);
+    }
+    case 0x4U: {
+        const std::uint32_t rd = get_bits(raw, 11U, 7U);
+        const std::uint32_t rs2 = get_bits(raw, 6U, 2U);
+        const bool alternate =
+            get_bits(raw, 12U, 12U) != 0U;
+
+        if (!alternate) {
+            if (rs2 == 0U) {
+                if (rd == 0U) {
+                    return illegal;
+                }
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Jalr,
+                    0U,
+                    rd);
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Add,
+                rd,
+                0U,
+                rs2);
+        }
+
+        if (rs2 == 0U) {
+            if (rd == 0U) {
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Ebreak);
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Jalr,
+                1U,
+                rd);
+        }
+        return make_compressed(
+            instruction,
+            InstructionKind::Add,
+            rd,
+            rd,
+            rs2);
+    }
+    case 0x6U: {
+        const std::uint32_t immediate =
+            (get_bits(raw, 12U, 9U) << 2U) |
+            (get_bits(raw, 8U, 7U) << 6U);
+        return make_compressed(
+            instruction,
+            InstructionKind::Sw,
+            0U,
+            2U,
+            get_bits(raw, 6U, 2U),
+            immediate);
+    }
     default:
         return illegal;
     }

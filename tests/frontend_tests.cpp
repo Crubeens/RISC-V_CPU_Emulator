@@ -20,6 +20,9 @@ int failures = 0;
 class RecordingBus final : public rv32::CpuBus {
   public:
     rv32::ReadResult next_read{};
+    std::array<rv32::ReadResult, 2> scripted_reads{};
+    std::array<rv32::PhysAddr, 2> read_addresses{};
+    bool use_scripted_reads{};
 
     std::uint32_t read_count{};
     std::uint32_t write_count{};
@@ -36,7 +39,26 @@ class RecordingBus final : public rv32::CpuBus {
         last_address = address;
         last_width = width;
         last_kind = kind;
-        return next_read;
+        if (read_count <= read_addresses.size()) {
+            read_addresses[read_count - 1U] = address;
+        }
+        if (use_scripted_reads) {
+            if (read_count > scripted_reads.size()) {
+                return {.fault = rv32::BusFault::DeviceError};
+            }
+            return scripted_reads[read_count - 1U];
+        }
+        if (!next_read.ok() ||
+            width != rv32::AccessWidth::HalfWord) {
+            return next_read;
+        }
+        return {
+            .fault = rv32::BusFault::None,
+            .value =
+                (next_read.value >>
+                 (static_cast<unsigned int>(address & 0x2U) * 8U)) &
+                0xFFFFU,
+        };
     }
 
     rv32::BusFault write(
@@ -85,16 +107,16 @@ class RecordingBus final : public rv32::CpuBus {
 void test_misaligned_pc_does_not_access_bus()
 {
     RecordingBus bus;
-    const auto result = rv32::fetch_decode(bus, 0x80000002U);
+    const auto result = rv32::fetch_decode(bus, 0x80000001U);
 
     CHECK(
         result.status ==
         rv32::FrontendStatus::InstructionAddressMisaligned);
-    CHECK(result.pc == 0x80000002U);
+    CHECK(result.pc == 0x80000001U);
     CHECK(result.instruction == 0U);
     CHECK(!result.decoded.valid());
     CHECK(result.bus_fault == rv32::BusFault::Misaligned);
-    CHECK(result.trap_value == 0x80000002U);
+    CHECK(result.trap_value == 0x80000001U);
     CHECK(bus.read_count == 0U);
     CHECK(bus.write_count == 0U);
 }
@@ -122,11 +144,118 @@ void test_valid_instruction_fetch_and_decode()
     CHECK(result.bus_fault == rv32::BusFault::None);
     CHECK(result.trap_value == 0U);
 
-    CHECK(bus.read_count == 1U);
+    CHECK(bus.read_count == 2U);
     CHECK(bus.write_count == 0U);
-    CHECK(bus.last_address == 0x80000000ULL);
-    CHECK(bus.last_width == rv32::AccessWidth::Word);
+    CHECK(bus.last_address == 0x80000002ULL);
+    CHECK(bus.last_width == rv32::AccessWidth::HalfWord);
     CHECK(bus.last_kind == rv32::AccessKind::InstructionFetch);
+}
+
+void test_compressed_instruction_at_halfword_boundary()
+{
+    RecordingBus bus;
+    bus.use_scripted_reads = true;
+    bus.scripted_reads[0] = {
+        .fault = rv32::BusFault::None,
+        .value = 0x4415U,
+    };
+
+    const auto result = rv32::fetch_decode(bus, 0x80000002U);
+
+    CHECK(result.status == rv32::FrontendStatus::Ready);
+    CHECK(result.ready());
+    CHECK(result.pc == 0x80000002U);
+    CHECK(result.instruction == 0x4415U);
+    CHECK(result.decoded.kind == rv32::InstructionKind::Addi);
+    CHECK(result.decoded.rd == 8U);
+    CHECK(result.decoded.rs1 == 0U);
+    CHECK(result.decoded.immediate == 5U);
+    CHECK(result.decoded.length == 2U);
+    CHECK(result.trap_value == 0U);
+    CHECK(bus.read_count == 1U);
+    CHECK(bus.read_addresses[0] == 0x80000002ULL);
+}
+
+void test_standard_instruction_at_halfword_boundary()
+{
+    RecordingBus bus;
+    bus.use_scripted_reads = true;
+    bus.scripted_reads = {{
+        {
+            .fault = rv32::BusFault::None,
+            .value = 0x0093U,
+        },
+        {
+            .fault = rv32::BusFault::None,
+            .value = 0x0050U,
+        },
+    }};
+
+    const auto result = rv32::fetch_decode(bus, 0x80000002U);
+
+    CHECK(result.status == rv32::FrontendStatus::Ready);
+    CHECK(result.instruction == 0x00500093U);
+    CHECK(result.decoded.kind == rv32::InstructionKind::Addi);
+    CHECK(result.decoded.rd == 1U);
+    CHECK(result.decoded.immediate == 5U);
+    CHECK(result.decoded.length == 4U);
+    CHECK(bus.read_count == 2U);
+    CHECK(bus.read_addresses[0] == 0x80000002ULL);
+    CHECK(bus.read_addresses[1] == 0x80000004ULL);
+}
+
+void test_second_halfword_fault_reports_its_address()
+{
+    RecordingBus bus;
+    bus.use_scripted_reads = true;
+    bus.scripted_reads = {{
+        {
+            .fault = rv32::BusFault::None,
+            .value = 0x0093U,
+        },
+        {
+            .fault = rv32::BusFault::Unmapped,
+            .value = 0,
+        },
+    }};
+
+    const auto result = rv32::fetch_decode(bus, 0x80000FFEU);
+
+    CHECK(
+        result.status ==
+        rv32::FrontendStatus::InstructionAccessFault);
+    CHECK(!result.ready());
+    CHECK(result.pc == 0x80000FFEU);
+    CHECK(result.instruction == 0x0093U);
+    CHECK(!result.decoded.valid());
+    CHECK(result.bus_fault == rv32::BusFault::Unmapped);
+    CHECK(result.trap_value == 0x80001000U);
+    CHECK(bus.read_count == 2U);
+    CHECK(bus.read_addresses[0] == 0x80000FFEULL);
+    CHECK(bus.read_addresses[1] == 0x80001000ULL);
+}
+
+void test_illegal_compressed_instruction_preserves_raw_value()
+{
+    RecordingBus bus;
+    bus.use_scripted_reads = true;
+    bus.scripted_reads[0] = {
+        .fault = rv32::BusFault::None,
+        .value = 0x0000U,
+    };
+
+    const auto result = rv32::fetch_decode(bus, 0x80000000U);
+
+    CHECK(
+        result.status ==
+        rv32::FrontendStatus::IllegalInstruction);
+    CHECK(!result.ready());
+    CHECK(result.instruction == 0U);
+    CHECK(result.decoded.kind == rv32::InstructionKind::Illegal);
+    CHECK(result.decoded.length == 2U);
+    CHECK(result.bus_fault == rv32::BusFault::None);
+    CHECK(result.trap_value == 0U);
+    CHECK(bus.read_count == 1U);
 }
 
 void test_illegal_instruction_preserves_raw_value()
@@ -149,7 +278,7 @@ void test_illegal_instruction_preserves_raw_value()
     CHECK(result.decoded.raw == 0xFFFFFFFFU);
     CHECK(result.bus_fault == rv32::BusFault::None);
     CHECK(result.trap_value == 0xFFFFFFFFU);
-    CHECK(bus.read_count == 1U);
+    CHECK(bus.read_count == 2U);
     CHECK(bus.write_count == 0U);
 }
 
@@ -209,6 +338,10 @@ int main()
 {
     test_misaligned_pc_does_not_access_bus();
     test_valid_instruction_fetch_and_decode();
+    test_compressed_instruction_at_halfword_boundary();
+    test_standard_instruction_at_halfword_boundary();
+    test_second_halfword_fault_reports_its_address();
+    test_illegal_compressed_instruction_preserves_raw_value();
     test_illegal_instruction_preserves_raw_value();
     test_bus_faults_are_preserved();
     test_bus_misalignment_is_not_lost();

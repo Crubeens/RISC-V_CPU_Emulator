@@ -32,3 +32,58 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## SDL2
+
+The optional graphical frontend dynamically links SDL2.
+
+- Project: SDL
+- Source: https://github.com/libsdl-org/SDL
+- Development version used for M7 validation: 2.32.10
+- License: zlib License
+
+Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
+
+This software is provided 'as-is', without any express or implied warranty.
+In no event will the authors be held liable for any damages arising from the
+use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim
+   that you wrote the original software. If you use this software in a
+   product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+
+## font8x8
+
+The SDL terminal embeds the Basic Latin bitmap table from `font8x8_basic`.
+
+- Project: `dhepper/font8x8`
+- Source: https://github.com/dhepper/font8x8
+- License: Public Domain
+- Embedded file: `app/src/font8x8_basic.hpp`
+
+The table is based on public-domain IBM VGA fonts and is distributed by its
+author as public domain.
+
+## riscv-tests
+
+The RV32IMAC acceptance suite vendors the applicable instruction-test
+sources, scalar macros, and physical test environment from:
+
+- Project: `riscv-software-src/riscv-tests`
+- Source: https://github.com/riscv-software-src/riscv-tests
+- Test revision: `ec8e5a29845b97b515299b89c523831b41367cda`
+- Environment revision: `6de71edb142be36319e380ce782c3d1830c65d68`
+- License: BSD 3-Clause
+
+The complete license text is retained at
+[`third_party/riscv-tests/LICENSE`](third_party/riscv-tests/LICENSE), and the
+vendored scope/configuration is recorded in
+[`third_party/riscv-tests/SOURCE_REVISION.md`](third_party/riscv-tests/SOURCE_REVISION.md).

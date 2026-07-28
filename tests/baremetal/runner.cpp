@@ -60,7 +60,7 @@ int main(int argc, char** argv)
             }
 
             std::cout
-                << "bare-metal RV32I program passed; retired="
+                << "bare-metal program passed; retired="
                 << state.instructions_retired << '\n';
             return 0;
         }

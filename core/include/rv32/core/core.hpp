@@ -24,7 +24,7 @@ class Core {
 
     [[nodiscard]] static constexpr std::string_view isa_string() noexcept
     {
-        return "rv32ima_zicntr_zicsr_zifencei";
+        return "rv32imac_zicntr_zicsr_zifencei";
     }
 
   private:

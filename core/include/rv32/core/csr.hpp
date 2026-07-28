@@ -151,8 +151,8 @@ inline constexpr std::uint32_t supported_interrupt_delegation =
     (1U << 1U) | (1U << 5U) | (1U << 9U);
 inline constexpr std::uint32_t supported_counter_enable = 0x7U;
 
-// RV32IMA with implemented Supervisor and User privilege modes.
-inline constexpr std::uint32_t machine_isa_value = 0x40141101U;
+// RV32IMAC with implemented Supervisor and User privilege modes.
+inline constexpr std::uint32_t machine_isa_value = 0x40141105U;
 
 [[nodiscard]] std::uint32_t sanitize_mstatus(
     std::uint32_t value) noexcept;

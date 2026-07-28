@@ -97,7 +97,7 @@ PendingCommit execute_decoded(
         .status = ExecuteStatus::Ready,
         .pc = pc,
         .instruction = decoded.raw,
-        .next_pc = pc + 4U,
+        .next_pc = pc + decoded.length,
         .register_write = {
             .enabled = true,
             .index = decoded.rd,
@@ -295,7 +295,7 @@ ControlFlowResult execute_control_flow(
         [&](std::uint32_t target,
             bool write_register,
             std::uint32_t register_value) noexcept {
-            if ((target & 0x3U) != 0U) {
+            if ((target & 0x1U) != 0U) {
                 return misaligned(target);
             }
             return ready(target, write_register, register_value);
@@ -304,19 +304,19 @@ ControlFlowResult execute_control_flow(
     switch (decoded.kind) {
     case InstructionKind::Auipc:
         return ready(
-            pc + 4U,
+            pc + decoded.length,
             true,
             pc + decoded.immediate);
     case InstructionKind::Jal:
         return finish_target(
             pc + decoded.immediate,
             true,
-            pc + 4U);
+            pc + decoded.length);
     case InstructionKind::Jalr:
         return finish_target(
             (rs1_value + decoded.immediate) & ~std::uint32_t{1},
             true,
-            pc + 4U);
+            pc + decoded.length);
     case InstructionKind::Beq:
         if (rs1_value == rs2_value) {
             return finish_target(
@@ -324,7 +324,7 @@ ControlFlowResult execute_control_flow(
                 false,
                 0);
         }
-        return ready(pc + 4U, false, 0);
+        return ready(pc + decoded.length, false, 0);
     case InstructionKind::Bne:
         if (rs1_value != rs2_value) {
             return finish_target(
@@ -332,7 +332,7 @@ ControlFlowResult execute_control_flow(
                 false,
                 0);
         }
-        return ready(pc + 4U, false, 0);
+        return ready(pc + decoded.length, false, 0);
     case InstructionKind::Blt:
         if (static_cast<std::int32_t>(rs1_value) <
             static_cast<std::int32_t>(rs2_value)) {
@@ -341,7 +341,7 @@ ControlFlowResult execute_control_flow(
                 false,
                 0);
         }
-        return ready(pc + 4U, false, 0);
+        return ready(pc + decoded.length, false, 0);
     case InstructionKind::Bge:
         if (static_cast<std::int32_t>(rs1_value) >=
             static_cast<std::int32_t>(rs2_value)) {
@@ -350,7 +350,7 @@ ControlFlowResult execute_control_flow(
                 false,
                 0);
         }
-        return ready(pc + 4U, false, 0);
+        return ready(pc + decoded.length, false, 0);
     case InstructionKind::Bltu:
         if (rs1_value < rs2_value) {
             return finish_target(
@@ -358,7 +358,7 @@ ControlFlowResult execute_control_flow(
                 false,
                 0);
         }
-        return ready(pc + 4U, false, 0);
+        return ready(pc + decoded.length, false, 0);
     case InstructionKind::Bgeu:
         if (rs1_value >= rs2_value) {
             return finish_target(
@@ -366,7 +366,7 @@ ControlFlowResult execute_control_flow(
                 false,
                 0);
         }
-        return ready(pc + 4U, false, 0);
+        return ready(pc + decoded.length, false, 0);
     default:
         return not_control_flow();
     }
@@ -514,7 +514,7 @@ MemoryResult execute_memory(
                 .status = ExecuteStatus::Ready,
                 .pc = pc,
                 .instruction = decoded.raw,
-                .next_pc = pc + 4U,
+                .next_pc = pc + decoded.length,
                 .register_write = {
                     .enabled = true,
                     .index = decoded.rd,
@@ -545,7 +545,7 @@ MemoryResult execute_memory(
             .status = ExecuteStatus::Ready,
             .pc = pc,
             .instruction = decoded.raw,
-            .next_pc = pc + 4U,
+            .next_pc = pc + decoded.length,
             .register_write = {},
         },
         .bus_fault = BusFault::None,
@@ -593,7 +593,7 @@ AtomicExecutionResult execute_atomic(
                 .status = ExecuteStatus::Ready,
                 .pc = pc,
                 .instruction = decoded.raw,
-                .next_pc = pc + 4U,
+                .next_pc = pc + decoded.length,
                 .register_write = {
                     .enabled = true,
                     .index = decoded.rd,
@@ -843,7 +843,7 @@ CsrExecutionResult execute_csr(
             .status = ExecuteStatus::Ready,
             .pc = pc,
             .instruction = decoded.raw,
-            .next_pc = pc + 4U,
+            .next_pc = pc + decoded.length,
             .register_write = {
                 .enabled = decoded.rd != 0U,
                 .index = decoded.rd,

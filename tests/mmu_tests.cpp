@@ -910,7 +910,7 @@ void test_frontend_memory_and_atomic_translation()
         rv32::fetch_decode(bus, code_virtual, &state);
     CHECK(frontend.ready());
     CHECK(frontend.decoded.kind == rv32::InstructionKind::Addi);
-    CHECK(bus.instruction_reads == 1U);
+    CHECK(bus.instruction_reads == 2U);
 
     const rv32::DecodedInstruction load{
         .kind = rv32::InstructionKind::Lw,
