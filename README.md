@@ -2,10 +2,14 @@
 
 这是一个以自研 RV32 CPU 核心为中心、外设可替换的整机模拟器项目。
 
-当前版本为 **M7 基线版**：能够运行 RV32IMAC 裸机程序，通过适用的
+当前 RV32 版本为 **M9 基线版**：能够运行 RV32IMAC 裸机程序，通过适用的
 官方 `riscv-tests` I/M/A/C 用例，并通过 OpenSBI 启动 Linux、挂载
 VirtIO ext4 根文件系统。SDL 窗口可以显示 UART 终端或线性
 Framebuffer，键盘输入会送入虚拟 UART。
+
+RV64 开发已完成 **RV64-M1**：新增独立 RV64I 核心、RV64 Machine、
+运行时 CPU 选择和 RV64I/LP64 裸机入口。RV64 的 M/A/C 扩展、特权态、
+Sv39 和 OpenSBI/Linux 启动属于后续阶段，当前不能用 RV64 启动 Linux。
 
 ## 当前包含
 
@@ -22,9 +26,11 @@ Framebuffer，键盘输入会送入虚拟 UART。
 - SDL2 图形窗口、80×30 UART 终端、Framebuffer 视图和键盘输入。
 - 60 个适用于本机配置的官方 `riscv-tests` RV32 I/M/A/C 用例。
 - Debug/Release 自动测试。
+- RV64I：64 位寄存器、完整 RV64I 基础整数指令、LD/SD/LWU、W 类指令、
+  独立平台适配层和裸机测试。
 
-CPU 核心位于 `core/`，只依赖抽象总线和中断线，不依赖 SDL 或任何
-具体外设实现。
+RV32 CPU 核心位于 `core/`，RV64 CPU 核心位于 `core64/`；两者都只依赖
+抽象总线，不依赖 SDL 或任何具体外设实现。
 
 ## 构建
 
@@ -48,7 +54,26 @@ ctest --preset release
 ctest --preset debug -L architecture
 ```
 
-## M8 提交轨迹与 Spike 差分
+RV64-M1 裸机测试需要在 Ubuntu/WSL 中使用 `riscv64-linux-gnu-gcc` 和
+`riscv64-linux-gnu-objcopy` 生成镜像，完整命令见
+[`tests/baremetal64/README.md`](tests/baremetal64/README.md)。生成后可运行：
+
+```powershell
+build\debug\rv32_emulator.exe --cpu rv64 --run-raw `
+  build\debug\baremetal64\smoke.bin 1000
+```
+
+运行时 CPU 选择：
+
+```powershell
+build\debug\rv32_emulator.exe --cpu rv32
+build\debug\rv32_emulator.exe --cpu rv64
+```
+
+省略 `--cpu` 时默认使用 RV32。RV64-M1 还支持 `--load-images` 验证三段
+镜像的加载布局；`--boot` 和 `--boot-disk` 要等 RV64 特权态阶段完成后启用。
+
+## 提交轨迹与 Spike 差分
 
 `Core::step()` 会为每条真正退休的指令返回一条提交轨迹。架构测试
 runner 可以直接输出轨迹：
@@ -112,7 +137,10 @@ build/release/rv32_emulator.exe --gui --boot-disk `
 
 ```text
 core/          自研 CPU 核心
+core64/        独立 RV64I CPU 核心及 RV64 实施计划
+common/        RV32/RV64 共用的架构无关总线类型
 platform/      总线、启动布局和整机装配
+platform64/    RV64 Machine 适配层
 devices/       可替换外设模型
 app/           命令行与 SDL 前端
 tests/         单元、裸机、架构和整机测试
@@ -121,4 +149,5 @@ docs/          原有学习资料
 prestudy/      原有前置学习代码
 ```
 
-后续内容按照 [PROJECT_PLAN.md](PROJECT_PLAN.md) 的固定阶段继续实现。
+RV32 后续内容按照 [PROJECT_PLAN.md](PROJECT_PLAN.md) 继续；RV64 按照
+[`core64/PROJECT_PLAN.md`](core64/PROJECT_PLAN.md) 的固定阶段继续实现。
