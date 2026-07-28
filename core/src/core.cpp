@@ -69,6 +69,7 @@ StepResult Core::step(const IrqLines& irq_lines)
     }
 
     CsrFile csr_file(state_, *bus_);
+    const PrivilegeMode executing_privilege = state_.privilege;
 
     const FrontendResult frontend_result =
         fetch_decode(*bus_, state_.pc, &state_);
@@ -328,6 +329,22 @@ StepResult Core::step(const IrqLines& irq_lines)
         .trap_value = 0,
         .bus_fault = BusFault::None,
         .cycle = state_.cycle,
+        .commit = {
+            .valid = true,
+            .privilege = executing_privilege,
+            .pc = pending.pc,
+            .instruction = pending.instruction,
+            .next_pc = state_.pc,
+            .instruction_length =
+                frontend_result.decoded.length,
+            .register_write = {
+                .enabled =
+                    pending.register_write.enabled &&
+                    pending.register_write.index != 0U,
+                .index = pending.register_write.index,
+                .value = pending.register_write.value,
+            },
+        },
     };
 }
 

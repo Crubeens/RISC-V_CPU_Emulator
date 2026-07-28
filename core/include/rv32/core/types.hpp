@@ -97,6 +97,24 @@ enum class StepStatus : std::uint8_t {
     CoreNotImplemented,
 };
 
+struct RegisterCommitTrace {
+    bool enabled{};
+    std::uint32_t index{};
+    std::uint32_t value{};
+};
+
+// One architecturally retired instruction. Trap entry and idle WFI cycles do
+// not produce a valid record; a WFI instruction itself does.
+struct CommitTrace {
+    bool valid{};
+    PrivilegeMode privilege{PrivilegeMode::Machine};
+    std::uint32_t pc{};
+    std::uint32_t instruction{};
+    std::uint32_t next_pc{};
+    std::uint8_t instruction_length{};
+    RegisterCommitTrace register_write{};
+};
+
 struct StepResult {
     StepStatus status{StepStatus::CoreNotImplemented};
     std::uint32_t pc{};
@@ -104,6 +122,7 @@ struct StepResult {
     std::uint32_t trap_value{};
     BusFault bus_fault{BusFault::None};
     std::uint64_t cycle{};
+    CommitTrace commit{};
 };
 
 } // namespace rv32

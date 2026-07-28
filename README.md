@@ -48,6 +48,34 @@ ctest --preset release
 ctest --preset debug -L architecture
 ```
 
+## M8 提交轨迹与 Spike 差分
+
+`Core::step()` 会为每条真正退休的指令返回一条提交轨迹。架构测试
+runner 可以直接输出轨迹：
+
+```powershell
+build/debug/rv32_architecture_runner.exe --trace `
+  build/debug/architecture/rv32ui-simple.bin
+```
+
+配置阶段如果同时找到 Python 3 和 `spike`，CMake 会增加真实的 Spike
+逐指令差分测试；缺少 Spike 不会影响普通构建和测试：
+
+```text
+ctest --preset debug -L differential --output-on-failure
+```
+
+也可以通过 `-DRV32_SPIKE_EXECUTABLE=<spike路径>` 显式指定 Spike。
+官方架构测试写入 `tohost` 后，DUT 会立即结束，而 Spike 可能在下一次
+宿主接口轮询前继续执行结束循环。差分工具使用 `--allow-spike-tail`
+只忽略完整 DUT 提交前缀之后的 Spike 记录；前缀中的权限级、PC、指令
+和通用寄存器写回仍会逐条严格比较。
+Spike 以 `--priv=msu` 运行，因为 riscv-tests 物理环境会访问 `satp`
+并通过 `mret` 进入低特权级；限制为 M 模式会造成伪非法指令差异。
+首次真实验证所用的固定 Spike 提交记录在
+`tests/differential/SPIKE_REVISION.md`。找到本机 Spike 时，差分标签会
+覆盖 RV32I、RV32M、RV32A 和 RV32C 的代表用例。
+
 ## 启动 Linux
 
 串口加持久化虚拟磁盘：

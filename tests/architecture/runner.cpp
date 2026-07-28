@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <string_view>
 #include <vector>
 
 #include "rv32/devices/ram.hpp"
@@ -37,17 +38,51 @@ constexpr std::uint64_t instruction_limit = 1'000'000U;
            status == rv32::StepStatus::WaitingForInterrupt;
 }
 
+void print_commit_trace(const rv32::CommitTrace& trace)
+{
+    if (!trace.valid) {
+        return;
+    }
+
+    std::cout
+        << "RV32TRACE "
+        << static_cast<unsigned int>(trace.privilege)
+        << ' ' << std::hex << std::setw(8) << std::setfill('0')
+        << trace.pc
+        << ' ' << std::setw(
+                      static_cast<int>(
+                          trace.instruction_length) *
+                      2)
+        << trace.instruction
+        << ' ' << std::setw(8) << trace.next_pc;
+    if (trace.register_write.enabled) {
+        std::cout
+            << " x" << std::dec << trace.register_write.index
+            << '=' << std::hex << std::setw(8)
+            << trace.register_write.value;
+    } else {
+        std::cout << " -";
+    }
+    std::cout << std::setfill(' ') << std::dec << '\n';
+}
+
 } // namespace
 
 int main(int argc, char** argv)
 {
-    if (argc != 2) {
+    const bool trace_enabled =
+        argc == 3 &&
+        std::string_view(argv[1]) == "--trace";
+    if (argc != 2 && !trace_enabled) {
         std::cerr
-            << "usage: rv32_architecture_runner <raw-binary>\n";
+            << "usage: rv32_architecture_runner "
+            << "[--trace] <raw-binary>\n";
         return 2;
     }
 
-    std::ifstream input(argv[1], std::ios::binary);
+    const char* const image_path =
+        argv[trace_enabled ? 2 : 1];
+    std::ifstream input(image_path, std::ios::binary);
     if (!input) {
         std::cerr << "cannot open architecture-test image\n";
         return 3;
@@ -74,6 +109,9 @@ int main(int argc, char** argv)
          step < instruction_limit;
          ++step) {
         const auto result = machine.step();
+        if (trace_enabled) {
+            print_commit_trace(result.commit);
+        }
         const std::uint32_t tohost =
             read_word(machine.ram(), tohost_offset);
         if (tohost != 0U) {

@@ -842,6 +842,75 @@ if(RV32_BUILD_TESTS)
             rv32_architecture_runner
             rv32_architecture_images)
 
+        find_package(
+            Python3
+            COMPONENTS Interpreter
+            QUIET)
+        if(Python3_Interpreter_FOUND)
+            add_test(
+                NAME rv32_spike_trace_parser_tests
+                COMMAND
+                    "${Python3_EXECUTABLE}"
+                    "${PROJECT_SOURCE_DIR}/tests/differential/compare_spike.py"
+                    --self-test)
+            set_tests_properties(
+                rv32_spike_trace_parser_tests
+                PROPERTIES
+                    LABELS "differential")
+
+            find_program(
+                RV32_SPIKE_EXECUTABLE
+                NAMES spike)
+            if(RV32_SPIKE_EXECUTABLE)
+                function(
+                    rv32_add_spike_differential_test
+                    suite
+                    test_name)
+                    set(
+                        differential_name
+                        "rv32_spike_differential_${suite}_${test_name}")
+                    set(
+                        differential_stem
+                        "${suite}-${test_name}")
+                    add_test(
+                        NAME "${differential_name}"
+                        COMMAND
+                            "${Python3_EXECUTABLE}"
+                            "${PROJECT_SOURCE_DIR}/tests/differential/compare_spike.py"
+                            --dut
+                            "$<TARGET_FILE:rv32_architecture_runner>"
+                            --binary
+                            "${RV32_ARCHITECTURE_OUTPUT_DIR}/${differential_stem}.bin"
+                            --elf
+                            "${RV32_ARCHITECTURE_OUTPUT_DIR}/${differential_stem}.elf"
+                            --spike
+                            "${RV32_SPIKE_EXECUTABLE}"
+                            --allow-spike-tail)
+                    set_tests_properties(
+                        "${differential_name}"
+                        PROPERTIES
+                            LABELS "differential"
+                            TIMEOUT 45)
+                endfunction()
+
+                rv32_add_spike_differential_test(rv32ui simple)
+                rv32_add_spike_differential_test(rv32ui add)
+                rv32_add_spike_differential_test(rv32um mul)
+                rv32_add_spike_differential_test(rv32ua amoadd_w)
+                rv32_add_spike_differential_test(rv32uc rvc)
+            else()
+                message(
+                    STATUS
+                    "Spike not found; commit-trace parser is tested, "
+                    "but live differential testing is disabled")
+            endif()
+        else()
+            message(
+                STATUS
+                "Python 3 not found; optional Spike differential tests "
+                "are disabled")
+        endif()
+
         add_test(
             NAME rv32_baremetal_smoke
             COMMAND

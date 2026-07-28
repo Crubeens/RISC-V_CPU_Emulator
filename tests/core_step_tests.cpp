@@ -286,6 +286,12 @@ void test_register_values_flow_through_complete_steps()
         0x002081B3U,
         0x00100013U,
     };
+    constexpr std::array expected_values{
+        5U,
+        3U,
+        8U,
+        0U,
+    };
 
     for (std::size_t index = 0;
          index < expected_instructions.size();
@@ -302,6 +308,30 @@ void test_register_values_flow_through_complete_steps()
         CHECK(result.instruction == expected_instructions[index]);
         CHECK(result.trap_value == 0U);
         CHECK(result.bus_fault == rv32::BusFault::None);
+        CHECK(result.commit.valid);
+        CHECK(
+            result.commit.privilege ==
+            rv32::PrivilegeMode::Machine);
+        CHECK(result.commit.pc == result.pc);
+        CHECK(
+            result.commit.instruction ==
+            result.instruction);
+        CHECK(
+            result.commit.next_pc ==
+            ProgramBus::base +
+                static_cast<std::uint32_t>((index + 1U) * 4U));
+        CHECK(result.commit.instruction_length == 4U);
+        CHECK(
+            result.commit.register_write.enabled ==
+            (index < 3U));
+        if (index < 3U) {
+            CHECK(
+                result.commit.register_write.index ==
+                index + 1U);
+            CHECK(
+                result.commit.register_write.value ==
+                expected_values[index]);
+        }
     }
 
     const auto state = core.snapshot();
@@ -313,6 +343,33 @@ void test_register_values_flow_through_complete_steps()
     CHECK(state.instructions_retired == 4U);
     CHECK(bus.read_count == 8U);
     CHECK(bus.write_count == 0U);
+}
+
+void test_compressed_commit_trace()
+{
+    ProgramBus bus;
+    bus.words[0] = 0x00010085U; // c.addi x1, 1; c.nop
+    rv32::Core core(bus);
+
+    const auto add = core.step({});
+    CHECK(add.status == rv32::StepStatus::Retired);
+    CHECK(add.commit.valid);
+    CHECK(add.commit.pc == ProgramBus::base);
+    CHECK(add.commit.instruction == 0x0085U);
+    CHECK(add.commit.next_pc == ProgramBus::base + 2U);
+    CHECK(add.commit.instruction_length == 2U);
+    CHECK(add.commit.register_write.enabled);
+    CHECK(add.commit.register_write.index == 1U);
+    CHECK(add.commit.register_write.value == 1U);
+
+    const auto nop = core.step({});
+    CHECK(nop.status == rv32::StepStatus::Retired);
+    CHECK(nop.commit.valid);
+    CHECK(nop.commit.pc == ProgramBus::base + 2U);
+    CHECK(nop.commit.instruction == 0x0001U);
+    CHECK(nop.commit.next_pc == ProgramBus::base + 4U);
+    CHECK(nop.commit.instruction_length == 2U);
+    CHECK(!nop.commit.register_write.enabled);
 }
 
 void test_m_extension_flows_through_complete_steps()
@@ -724,6 +781,7 @@ void test_ecall_and_ebreak_are_precise_events()
         CHECK(result.instruction == test.instruction);
         CHECK(result.trap_value == test.trap_value);
         CHECK(result.bus_fault == rv32::BusFault::None);
+        CHECK(!result.commit.valid);
         check_precise_machine_trap(
             core.snapshot(),
             before,
@@ -741,6 +799,7 @@ int main()
 {
     test_reset_initializes_boot_arguments();
     test_register_values_flow_through_complete_steps();
+    test_compressed_commit_trace();
     test_m_extension_flows_through_complete_steps();
     test_misaligned_pc_does_not_change_state();
     test_fetch_fault_does_not_change_state();
