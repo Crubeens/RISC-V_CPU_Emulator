@@ -8,17 +8,18 @@
 
 - RV32：M9 基线，支持 RV32IMAC、M/S/U、Sv32、OpenSBI、Linux、
   Buildroot ext4 根文件系统和 SDL 图形界面。
-- RV64：M9 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
+- RV64：M10.1 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
   LP64 Buildroot ext4、SDL、独立性能统计、参考/快速执行模式，以及
-  RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS 和 Goldfish RTC。
-- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 105。
+  RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS、Goldfish RTC 和
+  F/D 浮点状态/传输基础。
+- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 106。
 
 ## 架构边界
 
 | 模块 | 用途 |
 | --- | --- |
 | `core32/` | 独立 RV32IMAC CPU、CSR、Trap、中断、Sv32 和 TLB |
-| `core64/` | 独立 RV64IMAC CPU、CSR、Trap、中断、Sv39 和 TLB |
+| `core64/` | 独立 RV64 CPU、CSR、Trap、中断、Sv39、TLB 和浮点状态 |
 | `common/` | 与 XLEN 无关的总线接口、物理地址和系统总线 |
 | `devices/` | RAM、CLINT、PLIC、UART、VirtIO Block/Net、Goldfish RTC、Framebuffer、Syscon |
 | `platform32/` | RV32 地址布局、设备树、启动装载和 Machine |
@@ -34,6 +35,8 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 
 - RV32I/RV64I 基础整数指令和 RV64 W 类指令。
 - RV32M/RV64M、RV32A/RV64A、RV32C/RV64C。
+- RV64 M10.1 浮点基础：32×64 位 FPR、`fflags/frm/fcsr`、FS/SD、
+  `FLW/FSW/FLD/FSD`、四条 FMV 和 RV64C 压缩双精度访存。
 - Zicsr、Zifencei、Zicntr。
 - M/S/U 特权级、精确异常、中断委托、`MRET`、`SRET` 和 `WFI`。
 - Sv32 与 Sv39、页权限、A/D 位、ASID、TLB 和 `SFENCE.VMA`。
@@ -152,5 +155,6 @@ Debian 13 riscv64 APT 镜像可由
 - RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 - RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
 
-RV64-M1 至 M9 已完成。当前下一阶段是 RV64-M10.1；既有 M1–M8 验收
-边界保持冻结。
+RV64-M1 至 M9 和 M10.1 已完成。当前下一阶段是 RV64-M10.2；在完整
+F/D 算术和差分验收前，对外 ISA 宣告仍保持 RV64IMAC，既有 M1–M8
+验收边界保持冻结。

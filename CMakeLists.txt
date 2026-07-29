@@ -445,6 +445,21 @@ if(RV_BUILD_TESTS)
         COMMAND rv64_compressed_extension_tests)
 
     add_executable(
+        rv64_floating_state_tests
+        tests/rv64_floating_state_tests.cpp)
+
+    target_link_libraries(
+        rv64_floating_state_tests
+        PRIVATE
+            rv64_core)
+
+    rv_enable_warnings(rv64_floating_state_tests)
+
+    add_test(
+        NAME rv64_floating_state_tests
+        COMMAND rv64_floating_state_tests)
+
+    add_executable(
         rv64_privileged_tests
         tests/rv64_privileged_tests.cpp)
 

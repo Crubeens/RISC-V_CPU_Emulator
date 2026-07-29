@@ -28,6 +28,10 @@ struct CsrReadResult {
 
 namespace csr_address {
 
+inline constexpr CsrAddress fflags = 0x001U;
+inline constexpr CsrAddress frm = 0x002U;
+inline constexpr CsrAddress fcsr = 0x003U;
+
 inline constexpr CsrAddress sstatus = 0x100U;
 inline constexpr CsrAddress sie = 0x104U;
 inline constexpr CsrAddress stvec = 0x105U;
@@ -74,6 +78,11 @@ inline constexpr Xlen mpie = Xlen{1} << 7U;
 inline constexpr Xlen spp = Xlen{1} << 8U;
 inline constexpr unsigned int mpp_shift = 11U;
 inline constexpr Xlen mpp = Xlen{3} << mpp_shift;
+inline constexpr unsigned int fs_shift = 13U;
+inline constexpr Xlen fs = Xlen{3} << fs_shift;
+inline constexpr Xlen fs_initial = Xlen{1} << fs_shift;
+inline constexpr Xlen fs_clean = Xlen{2} << fs_shift;
+inline constexpr Xlen fs_dirty = Xlen{3} << fs_shift;
 inline constexpr Xlen mprv = Xlen{1} << 17U;
 inline constexpr Xlen sum = Xlen{1} << 18U;
 inline constexpr Xlen mxr = Xlen{1} << 19U;
@@ -82,10 +91,11 @@ inline constexpr Xlen tw = Xlen{1} << 21U;
 inline constexpr Xlen tsr = Xlen{1} << 22U;
 inline constexpr Xlen uxl = Xlen{2} << 32U;
 inline constexpr Xlen sxl = Xlen{2} << 34U;
+inline constexpr Xlen sd = Xlen{1} << 63U;
 inline constexpr Xlen supervisor_view =
-    sie | spie | spp | sum | mxr | uxl;
+    sie | spie | spp | fs | sum | mxr | uxl | sd;
 inline constexpr Xlen writable =
-    sie | mie | spie | mpie | spp | mpp | mprv | sum | mxr |
+    sie | mie | spie | mpie | spp | mpp | fs | mprv | sum | mxr |
     tvm | tw | tsr;
 inline constexpr Xlen fixed = uxl | sxl;
 
@@ -104,6 +114,9 @@ inline constexpr Xlen machine_isa_value =
 
 [[nodiscard]] Xlen sanitize_mstatus(Xlen value) noexcept;
 [[nodiscard]] Xlen sanitize_tvec(Xlen value) noexcept;
+[[nodiscard]] bool floating_point_enabled(
+    const CpuSnapshot& state) noexcept;
+void mark_floating_point_dirty(CpuSnapshot& state) noexcept;
 
 class CsrFile final {
   public:

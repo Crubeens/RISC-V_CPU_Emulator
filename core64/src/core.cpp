@@ -291,6 +291,7 @@ StepResult Core::step(const IrqLines& irq_lines)
     const std::uint64_t rs2 = state_.registers[decoded.rs2];
     std::uint64_t next_pc = pc + decoded.length;
     std::optional<std::uint64_t> register_value;
+    std::optional<std::uint64_t> floating_register_value;
     std::optional<std::pair<CsrAddress, Xlen>> csr_write;
     std::optional<CpuSnapshot> privileged_state;
     bool wait_for_interrupt = false;
@@ -791,6 +792,56 @@ StepResult Core::step(const IrqLines& irq_lines)
                         : loaded.value;
         break;
     }
+    case InstructionKind::Flw:
+    case InstructionKind::Fld: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        const rv::AccessWidth width =
+            decoded.kind == InstructionKind::Flw
+                ? rv::AccessWidth::Word
+                : rv::AccessWidth::DoubleWord;
+        const std::uint64_t address = rs1 + decoded.immediate;
+        if (!aligned(address, width)) {
+            return trap(
+                ExceptionCause::LoadAddressMisaligned,
+                instruction,
+                address,
+                rv::BusFault::Misaligned);
+        }
+        const TranslationResult translation = translate(
+            address,
+            MemoryAccessType::Load);
+        if (!translation.ready()) {
+            return trap(
+                translation.status == TranslationStatus::PageFault
+                    ? ExceptionCause::LoadPageFault
+                    : ExceptionCause::LoadAccessFault,
+                instruction,
+                address,
+                translation.bus_fault);
+        }
+        const rv::ReadResult loaded = bus_->read(
+            translation.physical_address,
+            width,
+            rv::AccessKind::Load);
+        if (!loaded.ok()) {
+            return trap(
+                ExceptionCause::LoadAccessFault,
+                instruction,
+                address,
+                loaded.fault);
+        }
+        floating_register_value =
+            decoded.kind == InstructionKind::Flw
+                ? (0xFFFFFFFF00000000ULL |
+                   static_cast<std::uint32_t>(loaded.value))
+                : loaded.value;
+        break;
+    }
     case InstructionKind::Sb:
     case InstructionKind::Sh:
     case InstructionKind::Sw:
@@ -837,6 +888,76 @@ StepResult Core::step(const IrqLines& irq_lines)
         }
         break;
     }
+    case InstructionKind::Fsw:
+    case InstructionKind::Fsd: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        const rv::AccessWidth width =
+            decoded.kind == InstructionKind::Fsw
+                ? rv::AccessWidth::Word
+                : rv::AccessWidth::DoubleWord;
+        const std::uint64_t address = rs1 + decoded.immediate;
+        if (!aligned(address, width)) {
+            return trap(
+                ExceptionCause::StoreAddressMisaligned,
+                instruction,
+                address,
+                rv::BusFault::Misaligned);
+        }
+        const TranslationResult translation = translate(
+            address,
+            MemoryAccessType::Store);
+        if (!translation.ready()) {
+            return trap(
+                translation.status == TranslationStatus::PageFault
+                    ? ExceptionCause::StorePageFault
+                    : ExceptionCause::StoreAccessFault,
+                instruction,
+                address,
+                translation.bus_fault);
+        }
+        const rv::BusFault fault = bus_->write(
+            translation.physical_address,
+            width,
+            state_.floating_point.registers[decoded.rs2],
+            rv::AccessKind::Store);
+        if (fault != rv::BusFault::None) {
+            return trap(
+                ExceptionCause::StoreAccessFault,
+                instruction,
+                address,
+                fault);
+        }
+        break;
+    }
+    case InstructionKind::FmvXW:
+    case InstructionKind::FmvWX:
+    case InstructionKind::FmvXD:
+    case InstructionKind::FmvDX:
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        if (decoded.kind == InstructionKind::FmvXW) {
+            register_value = sign_extend_word(
+                state_.floating_point.registers[decoded.rs1]);
+        } else if (decoded.kind == InstructionKind::FmvWX) {
+            floating_register_value =
+                0xFFFFFFFF00000000ULL |
+                static_cast<std::uint32_t>(rs1);
+        } else if (decoded.kind == InstructionKind::FmvXD) {
+            register_value =
+                state_.floating_point.registers[decoded.rs1];
+        } else {
+            floating_register_value = rs1;
+        }
+        break;
     case InstructionKind::Fence:
         break;
     case InstructionKind::FenceI:
@@ -995,6 +1116,17 @@ StepResult Core::step(const IrqLines& irq_lines)
             .value = *register_value,
         };
     }
+    FloatingRegisterCommit floating_register_write;
+    if (floating_register_value.has_value()) {
+        state_.floating_point.registers[decoded.rd] =
+            *floating_register_value;
+        mark_floating_point_dirty(state_);
+        floating_register_write = {
+            .enabled = true,
+            .index = decoded.rd,
+            .value = *floating_register_value,
+        };
+    }
     state_.registers[0] = 0;
     state_.pc = next_pc;
     ++state_.instructions_retired;
@@ -1013,6 +1145,7 @@ StepResult Core::step(const IrqLines& irq_lines)
         .trap_value = 0,
         .bus_fault = rv::BusFault::None,
         .register_write = register_write,
+        .floating_register_write = floating_register_write,
     };
 }
 

@@ -251,6 +251,20 @@ DecodedInstruction decode_instruction(
         }
         return make(instruction, kind, i_immediate(instruction));
     }
+    case 0x07U:
+        if (funct3 == 2U) {
+            return make(
+                instruction,
+                InstructionKind::Flw,
+                i_immediate(instruction));
+        }
+        if (funct3 == 3U) {
+            return make(
+                instruction,
+                InstructionKind::Fld,
+                i_immediate(instruction));
+        }
+        return make(instruction, InstructionKind::Illegal);
     case 0x23U: {
         InstructionKind kind = InstructionKind::Illegal;
         switch (funct3) {
@@ -271,6 +285,20 @@ DecodedInstruction decode_instruction(
         }
         return make(instruction, kind, s_immediate(instruction));
     }
+    case 0x27U:
+        if (funct3 == 2U) {
+            return make(
+                instruction,
+                InstructionKind::Fsw,
+                s_immediate(instruction));
+        }
+        if (funct3 == 3U) {
+            return make(
+                instruction,
+                InstructionKind::Fsd,
+                s_immediate(instruction));
+        }
+        return make(instruction, InstructionKind::Illegal);
     case 0x13U:
         switch (funct3) {
         case 0U:
@@ -450,6 +478,19 @@ DecodedInstruction decode_instruction(
         decoded.release = bits(instruction, 25U, 25U) != 0U;
         return decoded;
     }
+    case 0x53U:
+        switch (instruction & 0xFFF0707FU) {
+        case 0xE0000053U:
+            return make(instruction, InstructionKind::FmvXW);
+        case 0xF0000053U:
+            return make(instruction, InstructionKind::FmvWX);
+        case 0xE2000053U:
+            return make(instruction, InstructionKind::FmvXD);
+        case 0xF2000053U:
+            return make(instruction, InstructionKind::FmvDX);
+        default:
+            return make(instruction, InstructionKind::Illegal);
+        }
     case 0x0FU:
         if (funct3 == 0U) {
             return make(instruction, InstructionKind::Fence);
@@ -551,6 +592,18 @@ DecodedInstruction decode_compressed_instruction(
                 0U,
                 immediate);
         }
+        case 1U: {
+            const std::uint64_t immediate =
+                (bits(raw, 12U, 10U) << 3U) |
+                (bits(raw, 6U, 5U) << 6U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Fld,
+                compressed_register(bits(raw, 4U, 2U)),
+                compressed_register(bits(raw, 9U, 7U)),
+                0U,
+                immediate);
+        }
         case 2U:
         case 3U: {
             const bool doubleword = funct3 == 3U;
@@ -582,6 +635,18 @@ DecodedInstruction decode_compressed_instruction(
             return make_compressed(
                 instruction,
                 doubleword ? InstructionKind::Sd : InstructionKind::Sw,
+                0U,
+                compressed_register(bits(raw, 9U, 7U)),
+                compressed_register(bits(raw, 4U, 2U)),
+                immediate);
+        }
+        case 5U: {
+            const std::uint64_t immediate =
+                (bits(raw, 12U, 10U) << 3U) |
+                (bits(raw, 6U, 5U) << 6U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Fsd,
                 0U,
                 compressed_register(bits(raw, 9U, 7U)),
                 compressed_register(bits(raw, 4U, 2U)),
@@ -776,6 +841,21 @@ DecodedInstruction decode_compressed_instruction(
             0U,
             shift);
     }
+    case 1U: {
+        const auto rd = static_cast<std::uint8_t>(
+            bits(raw, 11U, 7U));
+        const std::uint64_t immediate =
+            (bits(raw, 6U, 5U) << 3U) |
+            (bits(raw, 12U, 12U) << 5U) |
+            (bits(raw, 4U, 2U) << 6U);
+        return make_compressed(
+            instruction,
+            InstructionKind::Fld,
+            rd,
+            2U,
+            0U,
+            immediate);
+    }
     case 2U:
     case 3U: {
         const bool doubleword = funct3 == 3U;
@@ -855,6 +935,18 @@ DecodedInstruction decode_compressed_instruction(
         return make_compressed(
             instruction,
             doubleword ? InstructionKind::Sd : InstructionKind::Sw,
+            0U,
+            2U,
+            static_cast<std::uint8_t>(bits(raw, 6U, 2U)),
+            immediate);
+    }
+    case 5U: {
+        const std::uint64_t immediate =
+            (bits(raw, 12U, 10U) << 3U) |
+            (bits(raw, 9U, 7U) << 6U);
+        return make_compressed(
+            instruction,
+            InstructionKind::Fsd,
             0U,
             2U,
             static_cast<std::uint8_t>(bits(raw, 6U, 2U)),

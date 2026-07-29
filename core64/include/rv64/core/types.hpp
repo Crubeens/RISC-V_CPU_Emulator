@@ -62,8 +62,17 @@ struct SupervisorCsrState {
         const SupervisorCsrState&) const noexcept = default;
 };
 
+struct FloatingPointState {
+    std::array<Xlen, 32> registers{};
+    std::uint8_t fcsr{};
+
+    [[nodiscard]] constexpr bool operator==(
+        const FloatingPointState&) const noexcept = default;
+};
+
 struct CpuSnapshot {
     std::array<Xlen, 32> registers{};
+    FloatingPointState floating_point{};
     Xlen pc{};
     Xlen hart_id{};
     PrivilegeMode privilege{PrivilegeMode::Machine};
@@ -98,6 +107,12 @@ struct RegisterCommit {
     Xlen value{};
 };
 
+struct FloatingRegisterCommit {
+    bool enabled{};
+    std::uint8_t index{};
+    Xlen value{};
+};
+
 struct StepResult {
     StepStatus status{StepStatus::IllegalInstruction};
     PrivilegeMode privilege{PrivilegeMode::Machine};
@@ -106,6 +121,7 @@ struct StepResult {
     Xlen trap_value{};
     rv::BusFault bus_fault{rv::BusFault::None};
     RegisterCommit register_write{};
+    FloatingRegisterCommit floating_register_write{};
 };
 
 } // namespace rv64

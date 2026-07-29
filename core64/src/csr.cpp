@@ -64,6 +64,14 @@ namespace {
            address == csr_address::mhartid;
 }
 
+[[nodiscard]] constexpr bool floating_csr(
+    CsrAddress address) noexcept
+{
+    return address == csr_address::fflags ||
+           address == csr_address::frm ||
+           address == csr_address::fcsr;
+}
+
 [[nodiscard]] constexpr bool machine_writable(
     CsrAddress address) noexcept
 {
@@ -129,6 +137,11 @@ Xlen sanitize_mstatus(Xlen value) noexcept
     if (previous == 2U) {
         result &= ~mstatus_bits::mpp;
     }
+    if ((result & mstatus_bits::fs) == mstatus_bits::fs_dirty) {
+        result |= mstatus_bits::sd;
+    } else {
+        result &= ~mstatus_bits::sd;
+    }
     return result;
 }
 
@@ -136,6 +149,18 @@ Xlen sanitize_tvec(Xlen value) noexcept
 {
     const Xlen mode = value & 0x3U;
     return (value & ~Xlen{3}) | (mode <= 1U ? mode : 0U);
+}
+
+bool floating_point_enabled(const CpuSnapshot& state) noexcept
+{
+    return (state.machine_csrs.mstatus & mstatus_bits::fs) != 0U;
+}
+
+void mark_floating_point_dirty(CpuSnapshot& state) noexcept
+{
+    state.machine_csrs.mstatus = sanitize_mstatus(
+        (state.machine_csrs.mstatus & ~mstatus_bits::fs) |
+        mstatus_bits::fs_dirty);
 }
 
 CsrFile::CsrFile(CpuSnapshot& state, rv::CpuBus& bus) noexcept
@@ -149,12 +174,30 @@ CsrReadResult CsrFile::read(
 {
     if (!privilege_allows(address, privilege) ||
         satp_trapped(*state_, address, privilege) ||
+        (floating_csr(address) &&
+         !floating_point_enabled(*state_)) ||
         (is_counter(address) &&
          !counter_allowed(*state_, address, privilege))) {
         return {.status = CsrAccessStatus::PrivilegeViolation};
     }
 
     switch (address) {
+    case csr_address::fflags:
+        return {
+            CsrAccessStatus::Ready,
+            static_cast<Xlen>(state_->floating_point.fcsr & 0x1FU),
+        };
+    case csr_address::frm:
+        return {
+            CsrAccessStatus::Ready,
+            static_cast<Xlen>(
+                (state_->floating_point.fcsr >> 5U) & 0x7U),
+        };
+    case csr_address::fcsr:
+        return {
+            CsrAccessStatus::Ready,
+            static_cast<Xlen>(state_->floating_point.fcsr),
+        };
     case csr_address::sstatus:
         return {
             .status = CsrAccessStatus::Ready,
@@ -263,13 +306,17 @@ CsrAccessStatus CsrFile::validate_write(
     PrivilegeMode privilege) noexcept
 {
     if (!privilege_allows(address, privilege) ||
-        satp_trapped(*state_, address, privilege)) {
+        satp_trapped(*state_, address, privilege) ||
+        (floating_csr(address) &&
+         !floating_point_enabled(*state_))) {
         return CsrAccessStatus::PrivilegeViolation;
     }
     if (is_counter(address) || machine_identity(address)) {
         return CsrAccessStatus::ReadOnly;
     }
-    if (machine_writable(address) || supervisor_writable(address)) {
+    if (floating_csr(address) ||
+        machine_writable(address) ||
+        supervisor_writable(address)) {
         return CsrAccessStatus::Ready;
     }
     return CsrAccessStatus::NotFound;
@@ -280,6 +327,25 @@ void CsrFile::write_validated(
     Xlen value) noexcept
 {
     switch (address) {
+    case csr_address::fflags:
+        state_->floating_point.fcsr =
+            static_cast<std::uint8_t>(
+                (state_->floating_point.fcsr & 0xE0U) |
+                (value & 0x1FU));
+        mark_floating_point_dirty(*state_);
+        break;
+    case csr_address::frm:
+        state_->floating_point.fcsr =
+            static_cast<std::uint8_t>(
+                (state_->floating_point.fcsr & 0x1FU) |
+                ((value & 0x7U) << 5U));
+        mark_floating_point_dirty(*state_);
+        break;
+    case csr_address::fcsr:
+        state_->floating_point.fcsr =
+            static_cast<std::uint8_t>(value & 0xFFU);
+        mark_floating_point_dirty(*state_);
+        break;
     case csr_address::sstatus:
         state_->machine_csrs.mstatus = sanitize_mstatus(
             (state_->machine_csrs.mstatus &

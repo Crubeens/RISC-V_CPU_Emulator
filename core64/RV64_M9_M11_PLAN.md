@@ -55,9 +55,11 @@
 
 ## RV64-M10：完整 RV64F/RV64D
 
-状态：未开始，是当前下一阶段。
+状态：进行中；M10.1 已完成，当前下一阶段为 M10.2。
 
 ### M10.1：状态、CSR、访存、移动和压缩访存
+
+状态：已完成（2026-07-29）。
 
 - 增加独立的 32×64 位浮点寄存器文件。
 - 实现 `fflags`、`frm`、`fcsr`、`mstatus.FS`、`sstatus.FS` 和 `SD` 汇总位。
@@ -70,6 +72,17 @@
 - 正常、未对齐、页故障、总线失败和跨页访问均有测试。
 - CSR 权限、别名、FS 状态转换和 Trap 精确性均有测试。
 - Debian 动态加载器当前首个失败点 `C.FSD fs0,112(a0)` 能按规范执行。
+
+验收记录：
+
+- 已实现独立 32×64 位 FPR、`fflags/frm/fcsr`、FS/SD 和浮点提交信息。
+- 已实现 `FLW/FSW/FLD/FSD`、`FMV.X.W/FMV.W.X/FMV.X.D/FMV.D.X`、
+  `C.FLD/C.FSD/C.FLDSP/C.FSDSP`。
+- `FLW`/`FMV.W.X` NaN-boxing、`FMV.X.W` RV64 符号扩展、FS=Off、
+  未对齐、总线失败、Sv39 页故障和参考/快速模式一致性均有专项测试。
+- Debian 首个失败指令原始编码 `0xB920` 已完成译码和执行测试。
+- Debug 与 Release 均为 106/106 通过，RV32 全量回归无退化。
+- M10 完成前不修改 `misa`、DTS、OpenSBI 或 Linux 的 RV64IMAC 宣告。
 
 ### M10.2：算术、融合运算与舍入
 

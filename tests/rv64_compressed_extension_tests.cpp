@@ -127,8 +127,6 @@ void test_reserved_encodings()
     check_illegal(0x6002U); // C.LDSP rd=x0
     check_illegal(0x8002U); // C.JR rs1=x0
     check_illegal(0x0003U); // standard instruction quadrant
-    check_illegal(0x2000U); // C.FLD without floating point
-    check_illegal(0xA000U); // C.FSD without floating point
 }
 
 class TestBus final : public rv::CpuBus {

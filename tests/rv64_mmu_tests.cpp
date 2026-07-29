@@ -867,6 +867,12 @@ void test_core_fetch_load_and_page_fault_integration()
         encode_csr(rv64::csr_address::mepc, 2U),
         encode_i(1U, 0U, 0U, 3U, 0x13U),
         encode_i(11U, 3U, 1U, 3U, 0x13U),
+        encode_u(0x2000U, 8U),
+        (8U << 20U) |
+            (3U << 15U) |
+            (6U << 12U) |
+            (3U << 7U) |
+            0x33U,
         encode_csr(rv64::csr_address::mstatus, 3U),
         0x30200073U,
     };
@@ -885,26 +891,29 @@ void test_core_fetch_load_and_page_fault_integration()
         encode_i(0U, 4U, 3U, 5U, 0x03U));
     bus.store_word(
         physical_code + 8U,
-        encode_i(42U, 0U, 0U, 7U, 0x13U));
+        encode_i(0U, 4U, 3U, 1U, 0x07U));
     bus.store_word(
         physical_code + 12U,
+        encode_i(42U, 0U, 0U, 7U, 0x13U));
+    bus.store_word(
+        physical_code + 16U,
         (2U << 27U) |
             (4U << 15U) |
             (3U << 12U) |
             (5U << 7U) |
             0x2FU);
     bus.store_word(
-        physical_code + 16U,
+        physical_code + 20U,
         (3U << 27U) |
             (7U << 20U) |
             (4U << 15U) |
             (3U << 12U) |
             (6U << 7U) |
             0x2FU);
-    bus.store_word(physical_code + 20U, 0x12000073U);
+    bus.store_word(physical_code + 24U, 0x12000073U);
     bus.store_word(
-        physical_code + 24U,
-        encode_i(0U, 4U, 3U, 6U, 0x03U));
+        physical_code + 28U,
+        encode_i(0U, 4U, 3U, 2U, 0x07U));
     bus.store_doubleword(
         physical_data,
         0x1122334455667788ULL);
@@ -920,8 +929,12 @@ void test_core_fetch_load_and_page_fault_integration()
     CHECK(core.snapshot().pc == virtual_code);
     CHECK(core.step().status == rv64::StepStatus::Retired);
     CHECK(core.step().status == rv64::StepStatus::Retired);
+    CHECK(core.step().status == rv64::StepStatus::Retired);
     CHECK(
         core.snapshot().registers[5] ==
+        0x1122334455667788ULL);
+    CHECK(
+        core.snapshot().floating_point.registers[1] ==
         0x1122334455667788ULL);
     CHECK(core.tlb_entries() >= 2U);
     CHECK(core.performance_counters().mmu.tlb_misses >= 2U);
@@ -947,6 +960,7 @@ void test_core_fetch_load_and_page_fault_integration()
         static_cast<std::uint64_t>(
             rv64::ExceptionCause::LoadPageFault));
     CHECK(core.snapshot().machine_csrs.mtval == virtual_data);
+    CHECK(core.snapshot().floating_point.registers[2] == 0U);
     CHECK(core.performance_counters().synchronous_traps == 1U);
     CHECK(core.performance_counters().mmu.page_faults >= 1U);
 }
