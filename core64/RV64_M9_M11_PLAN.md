@@ -55,7 +55,7 @@
 
 ## RV64-M10：完整 RV64F/RV64D
 
-状态：进行中；M10.1、M10.2 已完成，当前下一阶段为 M10.3。
+状态：进行中；M10.1、M10.2、M10.3 已完成，当前下一阶段为 M10.4。
 
 ### M10.1：状态、CSR、访存、移动和压缩访存
 
@@ -114,6 +114,8 @@
 
 ### M10.3：比较、分类、符号与转换
 
+状态：已完成（2026-07-29）。
+
 - 实现 `FSGNJ*`、`FMIN/FMAX`、`FEQ/FLT/FLE`、`FCLASS`。
 - 实现 S/D 互转。
 - 实现 W/WU/L/LU 与 S/D 的全部整数浮点转换。
@@ -122,6 +124,19 @@
 
 - 覆盖精确边界、溢出、NaN、无穷、符号扩展和饱和值。
 - RV64F 与 RV64D 指令集合不存在仅为启动样例补齐的缺口。
+
+验收记录：
+
+- 已实现 S/D 的 `FSGNJ/FSGNJN/FSGNJX`、`FMIN/FMAX`、
+  `FEQ/FLT/FLE` 和 `FCLASS`。
+- 已实现 `FCVT.S.D/FCVT.D.S`，以及 W/WU/L/LU 与 S/D 的双向全部
+  16 种整数/浮点转换形式。
+- `FMIN/FMAX` 覆盖单 NaN、双 NaN、sNaN 与正负零；FEQ 使用静默比较，
+  FLT/FLE 对任意 NaN 置 NV。
+- RV64 的 W/WU 转换结果均按规范从 32 位符号扩展到 XLEN；NaN、无穷、
+  负数转无符号数和范围溢出使用 RISC-V 饱和值。
+- 分类覆盖十个 `FCLASS` 类别，无效单精度 NaN-box 按规范视为 canonical NaN。
+- Debug 与 Release 均为 108/108 通过，包含 RV32 全量回归。
 
 ### M10.4：整核与软件栈验收
 

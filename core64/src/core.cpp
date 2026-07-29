@@ -1057,6 +1057,244 @@ StepResult Core::step(const IrqLines& irq_lines)
         floating_exception_flags = result.exception_flags;
         break;
     }
+    case InstructionKind::FsgnjS:
+    case InstructionKind::FsgnjnS:
+    case InstructionKind::FsgnjxS:
+    case InstructionKind::FsgnjD:
+    case InstructionKind::FsgnjnD:
+    case InstructionKind::FsgnjxD: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        FloatingSignOperation operation = FloatingSignOperation::Copy;
+        if (decoded.kind == InstructionKind::FsgnjnS ||
+            decoded.kind == InstructionKind::FsgnjnD) {
+            operation = FloatingSignOperation::Negate;
+        } else if (decoded.kind == InstructionKind::FsgnjxS ||
+                   decoded.kind == InstructionKind::FsgnjxD) {
+            operation = FloatingSignOperation::ExclusiveOr;
+        }
+        const bool double_precision =
+            decoded.kind == InstructionKind::FsgnjD ||
+            decoded.kind == InstructionKind::FsgnjnD ||
+            decoded.kind == InstructionKind::FsgnjxD;
+        floating_register_value = floating_sign_injection(
+            double_precision ? FloatingFormat::Double
+                             : FloatingFormat::Single,
+            operation,
+            state_.floating_point.registers[decoded.rs1],
+            state_.floating_point.registers[decoded.rs2]);
+        break;
+    }
+    case InstructionKind::FminS:
+    case InstructionKind::FmaxS:
+    case InstructionKind::FminD:
+    case InstructionKind::FmaxD: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        const bool double_precision =
+            decoded.kind == InstructionKind::FminD ||
+            decoded.kind == InstructionKind::FmaxD;
+        const bool maximum =
+            decoded.kind == InstructionKind::FmaxS ||
+            decoded.kind == InstructionKind::FmaxD;
+        const FloatingResult result = floating_min_max(
+            double_precision ? FloatingFormat::Double
+                             : FloatingFormat::Single,
+            maximum ? FloatingMinMaxOperation::Maximum
+                    : FloatingMinMaxOperation::Minimum,
+            state_.floating_point.registers[decoded.rs1],
+            state_.floating_point.registers[decoded.rs2]);
+        floating_register_value = result.value;
+        floating_exception_flags = result.exception_flags;
+        break;
+    }
+    case InstructionKind::FeqS:
+    case InstructionKind::FltS:
+    case InstructionKind::FleS:
+    case InstructionKind::FeqD:
+    case InstructionKind::FltD:
+    case InstructionKind::FleD: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        FloatingComparisonOperation operation =
+            FloatingComparisonOperation::Equal;
+        if (decoded.kind == InstructionKind::FltS ||
+            decoded.kind == InstructionKind::FltD) {
+            operation = FloatingComparisonOperation::LessThan;
+        } else if (decoded.kind == InstructionKind::FleS ||
+                   decoded.kind == InstructionKind::FleD) {
+            operation = FloatingComparisonOperation::LessOrEqual;
+        }
+        const bool double_precision =
+            decoded.kind == InstructionKind::FeqD ||
+            decoded.kind == InstructionKind::FltD ||
+            decoded.kind == InstructionKind::FleD;
+        const FloatingIntegerResult result = floating_compare(
+            double_precision ? FloatingFormat::Double
+                             : FloatingFormat::Single,
+            operation,
+            state_.floating_point.registers[decoded.rs1],
+            state_.floating_point.registers[decoded.rs2]);
+        register_value = result.value;
+        floating_exception_flags = result.exception_flags;
+        break;
+    }
+    case InstructionKind::FclassS:
+    case InstructionKind::FclassD:
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        register_value = floating_classify(
+            decoded.kind == InstructionKind::FclassD
+                ? FloatingFormat::Double
+                : FloatingFormat::Single,
+            state_.floating_point.registers[decoded.rs1]);
+        break;
+    case InstructionKind::FcvtSD:
+    case InstructionKind::FcvtDS: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        std::uint8_t rounding_mode = 0;
+        if (!resolve_rounding_mode(
+                decoded.rounding_mode,
+                state_.floating_point.fcsr,
+                rounding_mode)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        const FloatingResult result = floating_convert_format(
+            decoded.kind == InstructionKind::FcvtSD
+                ? FloatingFormat::Single
+                : FloatingFormat::Double,
+            rounding_mode,
+            state_.floating_point.registers[decoded.rs1]);
+        floating_register_value = result.value;
+        floating_exception_flags = result.exception_flags;
+        break;
+    }
+    case InstructionKind::FcvtWS:
+    case InstructionKind::FcvtWuS:
+    case InstructionKind::FcvtLS:
+    case InstructionKind::FcvtLuS:
+    case InstructionKind::FcvtWD:
+    case InstructionKind::FcvtWuD:
+    case InstructionKind::FcvtLD:
+    case InstructionKind::FcvtLuD: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        std::uint8_t rounding_mode = 0;
+        if (!resolve_rounding_mode(
+                decoded.rounding_mode,
+                state_.floating_point.fcsr,
+                rounding_mode)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        const bool double_precision =
+            decoded.kind == InstructionKind::FcvtWD ||
+            decoded.kind == InstructionKind::FcvtWuD ||
+            decoded.kind == InstructionKind::FcvtLD ||
+            decoded.kind == InstructionKind::FcvtLuD;
+        const bool long_integer =
+            decoded.kind == InstructionKind::FcvtLS ||
+            decoded.kind == InstructionKind::FcvtLuS ||
+            decoded.kind == InstructionKind::FcvtLD ||
+            decoded.kind == InstructionKind::FcvtLuD;
+        const bool unsigned_integer =
+            decoded.kind == InstructionKind::FcvtWuS ||
+            decoded.kind == InstructionKind::FcvtLuS ||
+            decoded.kind == InstructionKind::FcvtWuD ||
+            decoded.kind == InstructionKind::FcvtLuD;
+        const FloatingIntegerResult result = floating_to_integer(
+            double_precision ? FloatingFormat::Double
+                             : FloatingFormat::Single,
+            long_integer ? FloatingIntegerWidth::Long
+                         : FloatingIntegerWidth::Word,
+            unsigned_integer,
+            rounding_mode,
+            state_.floating_point.registers[decoded.rs1]);
+        register_value = result.value;
+        floating_exception_flags = result.exception_flags;
+        break;
+    }
+    case InstructionKind::FcvtSW:
+    case InstructionKind::FcvtSWu:
+    case InstructionKind::FcvtSL:
+    case InstructionKind::FcvtSLu:
+    case InstructionKind::FcvtDW:
+    case InstructionKind::FcvtDWu:
+    case InstructionKind::FcvtDL:
+    case InstructionKind::FcvtDLu: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        std::uint8_t rounding_mode = 0;
+        if (!resolve_rounding_mode(
+                decoded.rounding_mode,
+                state_.floating_point.fcsr,
+                rounding_mode)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        const bool double_precision =
+            decoded.kind == InstructionKind::FcvtDW ||
+            decoded.kind == InstructionKind::FcvtDWu ||
+            decoded.kind == InstructionKind::FcvtDL ||
+            decoded.kind == InstructionKind::FcvtDLu;
+        const bool long_integer =
+            decoded.kind == InstructionKind::FcvtSL ||
+            decoded.kind == InstructionKind::FcvtSLu ||
+            decoded.kind == InstructionKind::FcvtDL ||
+            decoded.kind == InstructionKind::FcvtDLu;
+        const bool unsigned_integer =
+            decoded.kind == InstructionKind::FcvtSWu ||
+            decoded.kind == InstructionKind::FcvtSLu ||
+            decoded.kind == InstructionKind::FcvtDWu ||
+            decoded.kind == InstructionKind::FcvtDLu;
+        const FloatingResult result = integer_to_floating(
+            double_precision ? FloatingFormat::Double
+                             : FloatingFormat::Single,
+            long_integer ? FloatingIntegerWidth::Long
+                         : FloatingIntegerWidth::Word,
+            unsigned_integer,
+            rounding_mode,
+            rs1);
+        floating_register_value = result.value;
+        floating_exception_flags = result.exception_flags;
+        break;
+    }
     case InstructionKind::Fence:
         break;
     case InstructionKind::FenceI:
@@ -1219,15 +1457,18 @@ StepResult Core::step(const IrqLines& irq_lines)
     if (floating_register_value.has_value()) {
         state_.floating_point.registers[decoded.rd] =
             *floating_register_value;
-        state_.floating_point.fcsr = static_cast<std::uint8_t>(
-            state_.floating_point.fcsr |
-            floating_exception_flags);
         mark_floating_point_dirty(state_);
         floating_register_write = {
             .enabled = true,
             .index = decoded.rd,
             .value = *floating_register_value,
         };
+    }
+    if (floating_exception_flags != 0U) {
+        state_.floating_point.fcsr = static_cast<std::uint8_t>(
+            state_.floating_point.fcsr |
+            floating_exception_flags);
+        mark_floating_point_dirty(state_);
     }
     state_.registers[0] = 0;
     state_.pc = next_pc;

@@ -35,9 +35,9 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 
 - RV32I/RV64I 基础整数指令和 RV64 W 类指令。
 - RV32M/RV64M、RV32A/RV64A、RV32C/RV64C。
-- RV64 M10.1/M10.2 浮点基础与算术：32×64 位 FPR、
+- RV64 M10.1–M10.3 浮点状态与完整标量执行：32×64 位 FPR、
   `fflags/frm/fcsr`、FS/SD、浮点访存/移动、S/D 加减乘除、平方根、
-  四类融合乘加和完整舍入/异常标志语义。
+  四类融合乘加、比较/分类/最值/符号和全部 S/D/整数转换。
 - Zicsr、Zifencei、Zicntr。
 - M/S/U 特权级、精确异常、中断委托、`MRET`、`SRET` 和 `WFI`。
 - Sv32 与 Sv39、页权限、A/D 位、ASID、TLB 和 `SFENCE.VMA`。
@@ -156,6 +156,6 @@ Debian 13 riscv64 APT 镜像可由
 - RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 - RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
 
-RV64-M1 至 M9 和 M10.1/M10.2 已完成。当前下一阶段是 RV64-M10.3；在完整
+RV64-M1 至 M9 和 M10.1–M10.3 已完成。当前下一阶段是 RV64-M10.4；在完整
 F/D 算术和差分验收前，对外 ISA 宣告仍保持 RV64IMAC，既有 M1–M8
 验收边界保持冻结。

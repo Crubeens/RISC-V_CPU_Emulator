@@ -21,7 +21,34 @@ enum class FloatingArithmeticOperation : std::uint8_t {
     NegatedMultiplySubtract,
 };
 
+enum class FloatingSignOperation : std::uint8_t {
+    Copy,
+    Negate,
+    ExclusiveOr,
+};
+
+enum class FloatingMinMaxOperation : std::uint8_t {
+    Minimum,
+    Maximum,
+};
+
+enum class FloatingComparisonOperation : std::uint8_t {
+    Equal,
+    LessThan,
+    LessOrEqual,
+};
+
+enum class FloatingIntegerWidth : std::uint8_t {
+    Word,
+    Long,
+};
+
 struct FloatingResult {
+    std::uint64_t value{};
+    std::uint8_t exception_flags{};
+};
+
+struct FloatingIntegerResult {
     std::uint64_t value{};
     std::uint8_t exception_flags{};
 };
@@ -59,5 +86,46 @@ inline constexpr std::uint64_t canonical_nan64 =
     std::uint64_t first,
     std::uint64_t second = 0,
     std::uint64_t third = 0) noexcept;
+
+[[nodiscard]] std::uint64_t floating_sign_injection(
+    FloatingFormat format,
+    FloatingSignOperation operation,
+    std::uint64_t first,
+    std::uint64_t second) noexcept;
+
+[[nodiscard]] FloatingResult floating_min_max(
+    FloatingFormat format,
+    FloatingMinMaxOperation operation,
+    std::uint64_t first,
+    std::uint64_t second) noexcept;
+
+[[nodiscard]] FloatingIntegerResult floating_compare(
+    FloatingFormat format,
+    FloatingComparisonOperation operation,
+    std::uint64_t first,
+    std::uint64_t second) noexcept;
+
+[[nodiscard]] std::uint16_t floating_classify(
+    FloatingFormat format,
+    std::uint64_t value) noexcept;
+
+[[nodiscard]] FloatingResult floating_convert_format(
+    FloatingFormat destination_format,
+    std::uint8_t rounding_mode,
+    std::uint64_t source) noexcept;
+
+[[nodiscard]] FloatingIntegerResult floating_to_integer(
+    FloatingFormat source_format,
+    FloatingIntegerWidth width,
+    bool unsigned_integer,
+    std::uint8_t rounding_mode,
+    std::uint64_t source) noexcept;
+
+[[nodiscard]] FloatingResult integer_to_floating(
+    FloatingFormat destination_format,
+    FloatingIntegerWidth width,
+    bool unsigned_integer,
+    std::uint8_t rounding_mode,
+    std::uint64_t source) noexcept;
 
 } // namespace rv64

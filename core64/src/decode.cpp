@@ -560,15 +560,101 @@ DecodedInstruction decode_instruction(
         default:
             break;
         }
+        if (funct7 == 0x10U || funct7 == 0x11U) {
+            const bool double_precision = funct7 == 0x11U;
+            InstructionKind kind = InstructionKind::Illegal;
+            if (funct3 == 0U) {
+                kind = double_precision ? InstructionKind::FsgnjD
+                                        : InstructionKind::FsgnjS;
+            } else if (funct3 == 1U) {
+                kind = double_precision ? InstructionKind::FsgnjnD
+                                        : InstructionKind::FsgnjnS;
+            } else if (funct3 == 2U) {
+                kind = double_precision ? InstructionKind::FsgnjxD
+                                        : InstructionKind::FsgnjxS;
+            }
+            return make(instruction, kind);
+        }
+        if (funct7 == 0x14U || funct7 == 0x15U) {
+            const bool double_precision = funct7 == 0x15U;
+            InstructionKind kind = InstructionKind::Illegal;
+            if (funct3 == 0U) {
+                kind = double_precision ? InstructionKind::FminD
+                                        : InstructionKind::FminS;
+            } else if (funct3 == 1U) {
+                kind = double_precision ? InstructionKind::FmaxD
+                                        : InstructionKind::FmaxS;
+            }
+            return make(instruction, kind);
+        }
+        if (funct7 == 0x50U || funct7 == 0x51U) {
+            const bool double_precision = funct7 == 0x51U;
+            InstructionKind kind = InstructionKind::Illegal;
+            if (funct3 == 2U) {
+                kind = double_precision ? InstructionKind::FeqD
+                                        : InstructionKind::FeqS;
+            } else if (funct3 == 1U) {
+                kind = double_precision ? InstructionKind::FltD
+                                        : InstructionKind::FltS;
+            } else if (funct3 == 0U) {
+                kind = double_precision ? InstructionKind::FleD
+                                        : InstructionKind::FleS;
+            }
+            return make(instruction, kind);
+        }
         switch (instruction & 0xFFF0707FU) {
         case 0xE0000053U:
             return make(instruction, InstructionKind::FmvXW);
+        case 0xE0001053U:
+            return make(instruction, InstructionKind::FclassS);
         case 0xF0000053U:
             return make(instruction, InstructionKind::FmvWX);
         case 0xE2000053U:
             return make(instruction, InstructionKind::FmvXD);
+        case 0xE2001053U:
+            return make(instruction, InstructionKind::FclassD);
         case 0xF2000053U:
             return make(instruction, InstructionKind::FmvDX);
+        default:
+            break;
+        }
+        switch (instruction & 0xFFF0007FU) {
+        case 0x40100053U:
+            return make_floating(instruction, InstructionKind::FcvtSD);
+        case 0x42000053U:
+            return make_floating(instruction, InstructionKind::FcvtDS);
+        case 0xC0000053U:
+            return make_floating(instruction, InstructionKind::FcvtWS);
+        case 0xC0100053U:
+            return make_floating(instruction, InstructionKind::FcvtWuS);
+        case 0xC0200053U:
+            return make_floating(instruction, InstructionKind::FcvtLS);
+        case 0xC0300053U:
+            return make_floating(instruction, InstructionKind::FcvtLuS);
+        case 0xC2000053U:
+            return make_floating(instruction, InstructionKind::FcvtWD);
+        case 0xC2100053U:
+            return make_floating(instruction, InstructionKind::FcvtWuD);
+        case 0xC2200053U:
+            return make_floating(instruction, InstructionKind::FcvtLD);
+        case 0xC2300053U:
+            return make_floating(instruction, InstructionKind::FcvtLuD);
+        case 0xD0000053U:
+            return make_floating(instruction, InstructionKind::FcvtSW);
+        case 0xD0100053U:
+            return make_floating(instruction, InstructionKind::FcvtSWu);
+        case 0xD0200053U:
+            return make_floating(instruction, InstructionKind::FcvtSL);
+        case 0xD0300053U:
+            return make_floating(instruction, InstructionKind::FcvtSLu);
+        case 0xD2000053U:
+            return make_floating(instruction, InstructionKind::FcvtDW);
+        case 0xD2100053U:
+            return make_floating(instruction, InstructionKind::FcvtDWu);
+        case 0xD2200053U:
+            return make_floating(instruction, InstructionKind::FcvtDL);
+        case 0xD2300053U:
+            return make_floating(instruction, InstructionKind::FcvtDLu);
         default:
             return make(instruction, InstructionKind::Illegal);
         }
