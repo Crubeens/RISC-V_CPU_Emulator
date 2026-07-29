@@ -30,7 +30,8 @@ constexpr std::uint64_t step_limit = 1'000'000ULL;
 void print_commit(const rv64::StepResult& result, std::uint64_t next_pc)
 {
     std::cout
-        << "RV64TRACE 3 "
+        << "RV64TRACE "
+        << static_cast<unsigned int>(result.privilege) << ' '
         << std::hex << std::setfill('0')
         << std::setw(16) << result.pc << ' '
         << std::setw(8) << result.instruction << ' '
@@ -76,8 +77,14 @@ int main(int argc, char** argv)
             print_commit(result, machine.core().snapshot().pc);
             continue;
         }
-        if (result.status == rv64::StepStatus::Breakpoint) {
+        if (result.status == rv64::StepStatus::TrapTaken &&
+            (result.instruction == 0x00100073U ||
+             result.instruction == 0x00009002U)) {
             return 0;
+        }
+        if (result.status == rv64::StepStatus::TrapTaken ||
+            result.status == rv64::StepStatus::WaitingForInterrupt) {
+            continue;
         }
         std::cerr
             << "RV64 architecture guest stopped at 0x"

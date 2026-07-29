@@ -41,3 +41,9 @@ the RV64C integer instruction families, including the RV64-only compressed
 word and doubleword operations, 6-bit shift amounts, control flow and stack
 loads/stores. Build it into `build/debug/architecture64/rv64uc-rvc.elf` and
 convert it to `rv64uc-rvc.bin` when running the Spike differential command.
+
+For RV64-M5, use `-march=rv64imac_zicsr` with `privileged_trap.S`. It enters
+S-mode with `MRET`, delegates a supervisor `ECALL`, returns with `SRET`, waits
+with `WFI`, handles a CLINT machine-timer interrupt and validates an illegal
+S-mode machine-CSR access. The accepted output names are
+`build/debug/architecture64/rv64priv-m5.elf` and `rv64priv-m5.bin`.

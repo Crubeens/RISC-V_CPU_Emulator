@@ -10,6 +10,7 @@
 #include "rv/common/bus.hpp"
 #include "rv64/core/core.hpp"
 #include "rv64/core/decode.hpp"
+#include "rv64/core/trap.hpp"
 
 namespace {
 
@@ -443,14 +444,18 @@ void test_control_flow_and_exceptions()
     const std::uint32_t illegal[]{0U};
     bus.load_program(illegal);
     core.reset({.reset_pc = base});
-    CHECK(core.step().status == rv64::StepStatus::IllegalInstruction);
-    CHECK(core.snapshot().pc == base);
+    CHECK(core.step().status == rv64::StepStatus::TrapTaken);
+    CHECK(core.snapshot().pc == 0U);
+    CHECK(
+        core.snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::IllegalInstruction));
     CHECK(core.snapshot().instructions_retired == 0U);
 
     core.reset({.reset_pc = base + 1U});
     CHECK(
         core.step().status ==
-        rv64::StepStatus::InstructionAddressMisaligned);
+        rv64::StepStatus::TrapTaken);
 
     const std::uint32_t halfword_jump[]{encode_j(2U, 1U)};
     bus.load_program(halfword_jump);
@@ -466,7 +471,11 @@ void test_control_flow_and_exceptions()
     bus.load_program(bad_load);
     core.reset({.reset_pc = base});
     CHECK(core.step().status == rv64::StepStatus::Retired);
-    CHECK(core.step().status == rv64::StepStatus::LoadAddressMisaligned);
+    CHECK(core.step().status == rv64::StepStatus::TrapTaken);
+    CHECK(
+        core.snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::LoadAddressMisaligned));
 
     const std::uint32_t bad_store[]{
         encode_i(1U, 0U, 0U, 1U),
@@ -475,7 +484,11 @@ void test_control_flow_and_exceptions()
     bus.load_program(bad_store);
     core.reset({.reset_pc = base});
     CHECK(core.step().status == rv64::StepStatus::Retired);
-    CHECK(core.step().status == rv64::StepStatus::StoreAddressMisaligned);
+    CHECK(core.step().status == rv64::StepStatus::TrapTaken);
+    CHECK(
+        core.snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::StoreAddressMisaligned));
 }
 
 void test_all_branches_jalr_and_commit_metadata()
@@ -538,18 +551,26 @@ void test_environment_and_access_faults()
     const std::uint32_t environment[]{0x00000073U, 0x00100073U};
     bus.load_program(environment);
     core.reset({.reset_pc = base});
-    CHECK(core.step().status == rv64::StepStatus::EnvironmentCall);
-    CHECK(core.snapshot().pc == base);
+    CHECK(core.step().status == rv64::StepStatus::TrapTaken);
+    CHECK(core.snapshot().pc == 0U);
+    CHECK(
+        core.snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::EnvironmentCallFromMachine));
 
     bus.load_program(
         std::span<const std::uint32_t>(environment).subspan(1U));
     core.reset({.reset_pc = base});
-    CHECK(core.step().status == rv64::StepStatus::Breakpoint);
-    CHECK(core.snapshot().pc == base);
+    CHECK(core.step().status == rv64::StepStatus::TrapTaken);
+    CHECK(core.snapshot().pc == 0U);
+    CHECK(
+        core.snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::Breakpoint));
 
     core.reset({.reset_pc = base + memory_size});
     const auto fetch = core.step();
-    CHECK(fetch.status == rv64::StepStatus::InstructionAccessFault);
+    CHECK(fetch.status == rv64::StepStatus::TrapTaken);
     CHECK(fetch.bus_fault == rv::BusFault::Unmapped);
 
     const std::uint32_t bad_load[]{
@@ -558,7 +579,7 @@ void test_environment_and_access_faults()
     bus.load_program(bad_load);
     core.reset({.reset_pc = base});
     const auto load = core.step();
-    CHECK(load.status == rv64::StepStatus::LoadAccessFault);
+    CHECK(load.status == rv64::StepStatus::TrapTaken);
     CHECK(load.bus_fault == rv::BusFault::Unmapped);
     CHECK(load.trap_value == 0U);
 
@@ -568,7 +589,7 @@ void test_environment_and_access_faults()
     bus.load_program(bad_store);
     core.reset({.reset_pc = base});
     const auto store = core.step();
-    CHECK(store.status == rv64::StepStatus::StoreAccessFault);
+    CHECK(store.status == rv64::StepStatus::TrapTaken);
     CHECK(store.bus_fault == rv::BusFault::Unmapped);
 }
 

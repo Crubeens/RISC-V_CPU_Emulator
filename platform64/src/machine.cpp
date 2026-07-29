@@ -51,6 +51,7 @@ void Machine::reset(const ResetConfig& config)
 {
     bus_.reset_performance_counters();
     bus_.clear_reservations();
+    irq_lines_ = {};
     core_.reset(config);
 }
 
@@ -136,7 +137,21 @@ BootResult Machine::load_boot(const BootConfig& config) noexcept
 StepResult Machine::step(std::uint64_t elapsed_cycles)
 {
     bus_.tick_devices(elapsed_cycles);
-    return core_.step();
+    plic_->set_source_level(
+        address_map::virtio_block_irq,
+        virtio_block_->interrupt_pending());
+    plic_->set_source_level(
+        address_map::uart_irq,
+        uart_->interrupt_pending());
+    irq_lines_ = {
+        .machine_software = clint_->machine_software_irq(),
+        .machine_timer = clint_->machine_timer_irq(),
+        .machine_external = plic_->machine_external_irq(),
+        .supervisor_software = false,
+        .supervisor_timer = false,
+        .supervisor_external = plic_->supervisor_external_irq(),
+    };
+    return core_.step(irq_lines_);
 }
 
 Core& Machine::core() noexcept
@@ -162,6 +177,31 @@ const rv32::platform::SystemBus& Machine::bus() const noexcept
 rv32::devices::Ram& Machine::ram() noexcept
 {
     return *ram_;
+}
+
+rv32::devices::Clint& Machine::clint() noexcept
+{
+    return *clint_;
+}
+
+rv32::devices::Plic& Machine::plic() noexcept
+{
+    return *plic_;
+}
+
+rv32::devices::Uart16550& Machine::uart() noexcept
+{
+    return *uart_;
+}
+
+rv32::devices::VirtioBlock& Machine::virtio_block() noexcept
+{
+    return *virtio_block_;
+}
+
+const IrqLines& Machine::irq_lines() const noexcept
+{
+    return irq_lines_;
 }
 
 } // namespace rv64::platform

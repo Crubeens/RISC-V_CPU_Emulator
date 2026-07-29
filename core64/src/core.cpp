@@ -4,8 +4,12 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <utility>
 
+#include "rv64/core/csr.hpp"
 #include "rv64/core/decode.hpp"
+#include "rv64/core/interrupt.hpp"
+#include "rv64/core/trap.hpp"
 
 namespace rv64 {
 
@@ -96,22 +100,6 @@ namespace {
     return (address & (bytes - 1U)) == 0U;
 }
 
-[[nodiscard]] StepResult failure(
-    StepStatus status,
-    std::uint64_t pc,
-    std::uint32_t instruction,
-    std::uint64_t trap_value,
-    rv::BusFault bus_fault = rv::BusFault::None) noexcept
-{
-    return {
-        .status = status,
-        .pc = pc,
-        .instruction = instruction,
-        .trap_value = trap_value,
-        .bus_fault = bus_fault,
-    };
-}
-
 } // namespace
 
 Core::Core(rv::CpuBus& bus) noexcept : bus_(&bus)
@@ -122,22 +110,79 @@ Core::Core(rv::CpuBus& bus) noexcept : bus_(&bus)
 void Core::reset(const ResetConfig& config) noexcept
 {
     state_ = {};
-    hart_id_ = static_cast<std::uint32_t>(config.hart_id);
     state_.pc = config.reset_pc;
+    state_.hart_id = config.hart_id;
+    state_.privilege = config.initial_privilege;
+    state_.machine_csrs.mstatus = sanitize_mstatus(0);
     state_.registers[10] = config.hart_id;
     state_.registers[11] = config.boot_argument;
+    sampled_irq_lines_ = {};
 }
 
-StepResult Core::step()
+StepResult Core::step(const IrqLines& irq_lines)
 {
-    const std::uint64_t pc = state_.pc;
     ++state_.cycle;
     state_.registers[0] = 0;
+    sampled_irq_lines_ = irq_lines;
+    sample_interrupt_lines(state_, irq_lines);
+
+    if (state_.waiting_for_interrupt) {
+        if (!interrupt_wake_requested(state_)) {
+            return {
+                .status = StepStatus::WaitingForInterrupt,
+                .privilege = state_.privilege,
+                .pc = state_.pc,
+            };
+        }
+        state_.waiting_for_interrupt = false;
+    }
+
+    const InterruptSelection interrupt =
+        select_pending_interrupt(state_);
+    if (interrupt.pending) {
+        const PrivilegeMode interrupted_privilege = state_.privilege;
+        const Xlen interrupted_pc = state_.pc;
+        take_interrupt_trap(
+            state_,
+            {
+                .cause = interrupt.cause,
+                .interrupted_pc = interrupted_pc,
+            },
+            interrupt.target);
+        return {
+            .status = StepStatus::TrapTaken,
+            .privilege = interrupted_privilege,
+            .pc = interrupted_pc,
+        };
+    }
+
+    const std::uint64_t pc = state_.pc;
+    const PrivilegeMode executing_privilege = state_.privilege;
+    const auto trap =
+        [&](ExceptionCause cause,
+            std::uint32_t instruction,
+            Xlen trap_value,
+            rv::BusFault bus_fault = rv::BusFault::None) {
+        static_cast<void>(take_trap(
+            state_,
+            {
+                .cause = cause,
+                .exception_pc = pc,
+                .trap_value = trap_value,
+            }));
+        return StepResult{
+            .status = StepStatus::TrapTaken,
+            .privilege = executing_privilege,
+            .pc = pc,
+            .instruction = instruction,
+            .trap_value = trap_value,
+            .bus_fault = bus_fault,
+        };
+    };
 
     if ((pc & 0x1U) != 0U) {
-        return failure(
-            StepStatus::InstructionAddressMisaligned,
-            pc,
+        return trap(
+            ExceptionCause::InstructionAddressMisaligned,
             0,
             pc,
             rv::BusFault::Misaligned);
@@ -148,9 +193,8 @@ StepResult Core::step()
         rv::AccessWidth::HalfWord,
         rv::AccessKind::InstructionFetch);
     if (!first.ok()) {
-        return failure(
-            StepStatus::InstructionAccessFault,
-            pc,
+        return trap(
+            ExceptionCause::InstructionAccessFault,
             0,
             pc,
             first.fault);
@@ -168,9 +212,8 @@ StepResult Core::step()
             rv::AccessWidth::HalfWord,
             rv::AccessKind::InstructionFetch);
         if (!second.ok()) {
-            return failure(
-                StepStatus::InstructionAccessFault,
-                pc,
+            return trap(
+                ExceptionCause::InstructionAccessFault,
                 instruction,
                 pc + 2U,
                 second.fault);
@@ -182,17 +225,20 @@ StepResult Core::step()
         decoded = decode_instruction(instruction);
     }
     if (!decoded.valid()) {
-        return failure(
-            StepStatus::IllegalInstruction,
-            pc,
+        return trap(
+            ExceptionCause::IllegalInstruction,
             instruction,
             instruction);
     }
 
+    CsrFile csr_file(state_, *bus_);
     const std::uint64_t rs1 = state_.registers[decoded.rs1];
     const std::uint64_t rs2 = state_.registers[decoded.rs2];
     std::uint64_t next_pc = pc + decoded.length;
     std::optional<std::uint64_t> register_value;
+    std::optional<std::pair<CsrAddress, Xlen>> csr_write;
+    std::optional<CpuSnapshot> privileged_state;
+    bool wait_for_interrupt = false;
 
     const auto branch = [&](bool take) {
         if (take) {
@@ -467,10 +513,10 @@ StepResult Core::step()
             decoded.kind == InstructionKind::ScW ||
             decoded.kind == InstructionKind::ScD;
         if (!aligned(address, width)) {
-            return failure(
-                load_reserved ? StepStatus::LoadAddressMisaligned
-                              : StepStatus::StoreAddressMisaligned,
-                pc,
+            return trap(
+                load_reserved
+                    ? ExceptionCause::LoadAddressMisaligned
+                    : ExceptionCause::StoreAddressMisaligned,
                 instruction,
                 address,
                 rv::BusFault::Misaligned);
@@ -479,12 +525,15 @@ StepResult Core::step()
         if (load_reserved) {
             const rv::ReadResult result =
                 doubleword
-                    ? bus_->load_reserved_doubleword(hart_id_, address)
-                    : bus_->load_reserved_word(hart_id_, address);
+                    ? bus_->load_reserved_doubleword(
+                          static_cast<std::uint32_t>(state_.hart_id),
+                          address)
+                    : bus_->load_reserved_word(
+                          static_cast<std::uint32_t>(state_.hart_id),
+                          address);
             if (!result.ok()) {
-                return failure(
-                    StepStatus::LoadAccessFault,
-                    pc,
+                return trap(
+                    ExceptionCause::LoadAccessFault,
                     instruction,
                     address,
                     result.fault);
@@ -499,17 +548,16 @@ StepResult Core::step()
             const rv::StoreConditionalResult result =
                 doubleword
                     ? bus_->store_conditional_doubleword(
-                          hart_id_,
+                          static_cast<std::uint32_t>(state_.hart_id),
                           address,
                           rs2)
                     : bus_->store_conditional_word(
-                          hart_id_,
+                          static_cast<std::uint32_t>(state_.hart_id),
                           address,
                           static_cast<std::uint32_t>(rs2));
             if (!result.ok()) {
-                return failure(
-                    StepStatus::StoreAccessFault,
-                    pc,
+                return trap(
+                    ExceptionCause::StoreAccessFault,
                     instruction,
                     address,
                     result.fault);
@@ -559,14 +607,13 @@ StepResult Core::step()
         if (doubleword) {
             const rv::AtomicResult64 result =
                 bus_->atomic_doubleword(
-                    hart_id_,
+                    static_cast<std::uint32_t>(state_.hart_id),
                     address,
                     operation,
                     rs2);
             if (!result.ok()) {
-                return failure(
-                    StepStatus::StoreAccessFault,
-                    pc,
+                return trap(
+                    ExceptionCause::StoreAccessFault,
                     instruction,
                     address,
                     result.fault);
@@ -574,14 +621,13 @@ StepResult Core::step()
             register_value = result.original_value;
         } else {
             const rv::AtomicResult result = bus_->atomic_word(
-                hart_id_,
+                static_cast<std::uint32_t>(state_.hart_id),
                 address,
                 operation,
                 static_cast<std::uint32_t>(rs2));
             if (!result.ok()) {
-                return failure(
-                    StepStatus::StoreAccessFault,
-                    pc,
+                return trap(
+                    ExceptionCause::StoreAccessFault,
                     instruction,
                     address,
                     result.fault);
@@ -631,9 +677,8 @@ StepResult Core::step()
         }
         const std::uint64_t address = rs1 + decoded.immediate;
         if (!aligned(address, width)) {
-            return failure(
-                StepStatus::LoadAddressMisaligned,
-                pc,
+            return trap(
+                ExceptionCause::LoadAddressMisaligned,
                 instruction,
                 address,
                 rv::BusFault::Misaligned);
@@ -641,9 +686,8 @@ StepResult Core::step()
         const rv::ReadResult loaded =
             bus_->read(address, width, rv::AccessKind::Load);
         if (!loaded.ok()) {
-            return failure(
-                StepStatus::LoadAccessFault,
-                pc,
+            return trap(
+                ExceptionCause::LoadAccessFault,
                 instruction,
                 address,
                 loaded.fault);
@@ -667,9 +711,8 @@ StepResult Core::step()
         }
         const std::uint64_t address = rs1 + decoded.immediate;
         if (!aligned(address, width)) {
-            return failure(
-                StepStatus::StoreAddressMisaligned,
-                pc,
+            return trap(
+                ExceptionCause::StoreAddressMisaligned,
                 instruction,
                 address,
                 rv::BusFault::Misaligned);
@@ -680,9 +723,8 @@ StepResult Core::step()
             rs2,
             rv::AccessKind::Store);
         if (fault != rv::BusFault::None) {
-            return failure(
-                StepStatus::StoreAccessFault,
-                pc,
+            return trap(
+                ExceptionCause::StoreAccessFault,
                 instruction,
                 address,
                 fault);
@@ -692,35 +734,142 @@ StepResult Core::step()
     case InstructionKind::Fence:
     case InstructionKind::FenceI:
         break;
+    case InstructionKind::Csrrw:
+    case InstructionKind::Csrrs:
+    case InstructionKind::Csrrc:
+    case InstructionKind::Csrrwi:
+    case InstructionKind::Csrrsi:
+    case InstructionKind::Csrrci: {
+        const bool immediate =
+            decoded.kind == InstructionKind::Csrrwi ||
+            decoded.kind == InstructionKind::Csrrsi ||
+            decoded.kind == InstructionKind::Csrrci;
+        const bool set_or_clear =
+            decoded.kind == InstructionKind::Csrrs ||
+            decoded.kind == InstructionKind::Csrrc ||
+            decoded.kind == InstructionKind::Csrrsi ||
+            decoded.kind == InstructionKind::Csrrci;
+        const Xlen source = immediate ? decoded.immediate : rs1;
+        const bool read_required =
+            decoded.kind != InstructionKind::Csrrw &&
+            decoded.kind != InstructionKind::Csrrwi
+                ? true
+                : decoded.rd != 0U;
+        const bool write_required =
+            !set_or_clear ||
+            (immediate ? decoded.immediate != 0U
+                       : decoded.rs1 != 0U);
+        if (write_required &&
+            csr_file.validate_write(
+                decoded.csr,
+                executing_privilege) != CsrAccessStatus::Ready) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        Xlen old_value = 0;
+        if (read_required) {
+            const CsrReadResult read =
+                csr_file.read(decoded.csr, executing_privilege);
+            if (!read.ready()) {
+                return trap(
+                    ExceptionCause::IllegalInstruction,
+                    instruction,
+                    instruction);
+            }
+            old_value = read.value;
+        }
+        register_value = old_value;
+        if (write_required) {
+            Xlen base_value =
+                set_or_clear
+                    ? csr_file.read_for_write(
+                          decoded.csr,
+                          old_value)
+                    : old_value;
+            Xlen new_value = source;
+            if (decoded.kind == InstructionKind::Csrrs ||
+                decoded.kind == InstructionKind::Csrrsi) {
+                new_value = base_value | source;
+            } else if (
+                decoded.kind == InstructionKind::Csrrc ||
+                decoded.kind == InstructionKind::Csrrci) {
+                new_value = base_value & ~source;
+            }
+            csr_write = std::pair{decoded.csr, new_value};
+        }
+        break;
+    }
     case InstructionKind::Ecall:
-        return failure(
-            StepStatus::EnvironmentCall,
-            pc,
+        return trap(
+            environment_call_cause(executing_privilege),
             instruction,
             0);
     case InstructionKind::Ebreak:
-        return failure(
-            StepStatus::Breakpoint,
-            pc,
+        return trap(
+            ExceptionCause::Breakpoint,
             instruction,
             pc);
+    case InstructionKind::Mret: {
+        CpuSnapshot next = state_;
+        if (!execute_mret(next)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        next_pc = next.pc;
+        privileged_state = next;
+        break;
+    }
+    case InstructionKind::Sret: {
+        CpuSnapshot next = state_;
+        if (!execute_sret(next)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        next_pc = next.pc;
+        privileged_state = next;
+        break;
+    }
+    case InstructionKind::Wfi:
+        if (!wfi_allowed(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        wait_for_interrupt = true;
+        break;
+    case InstructionKind::SfenceVma:
+        if (!sfence_vma_allowed(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        break;
     case InstructionKind::Illegal:
-        return failure(
-            StepStatus::IllegalInstruction,
-            pc,
+        return trap(
+            ExceptionCause::IllegalInstruction,
             instruction,
             instruction);
     }
 
     if ((next_pc & 0x1U) != 0U) {
-        return failure(
-            StepStatus::InstructionAddressMisaligned,
-            pc,
+        return trap(
+            ExceptionCause::InstructionAddressMisaligned,
             instruction,
             next_pc,
             rv::BusFault::Misaligned);
     }
 
+    if (privileged_state.has_value()) {
+        state_ = *privileged_state;
+    }
     RegisterCommit register_write;
     if (register_value.has_value() && decoded.rd != 0U) {
         state_.registers[decoded.rd] = *register_value;
@@ -733,8 +882,15 @@ StepResult Core::step()
     state_.registers[0] = 0;
     state_.pc = next_pc;
     ++state_.instructions_retired;
+    state_.waiting_for_interrupt = wait_for_interrupt;
+    if (csr_write.has_value()) {
+        csr_file.write_validated(
+            csr_write->first,
+            csr_write->second);
+    }
     return {
         .status = StepStatus::Retired,
+        .privilege = executing_privilege,
         .pc = pc,
         .instruction = instruction,
         .trap_value = 0,
@@ -746,6 +902,11 @@ StepResult Core::step()
 const CpuSnapshot& Core::snapshot() const noexcept
 {
     return state_;
+}
+
+const IrqLines& Core::sampled_irq_lines() const noexcept
+{
+    return sampled_irq_lines_;
 }
 
 } // namespace rv64

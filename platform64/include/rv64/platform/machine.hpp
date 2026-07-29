@@ -53,6 +53,11 @@ class Machine {
     [[nodiscard]] const rv32::platform::SystemBus& bus() const noexcept;
 
     [[nodiscard]] rv32::devices::Ram& ram() noexcept;
+    [[nodiscard]] rv32::devices::Clint& clint() noexcept;
+    [[nodiscard]] rv32::devices::Plic& plic() noexcept;
+    [[nodiscard]] rv32::devices::Uart16550& uart() noexcept;
+    [[nodiscard]] rv32::devices::VirtioBlock& virtio_block() noexcept;
+    [[nodiscard]] const IrqLines& irq_lines() const noexcept;
 
   private:
     rv32::platform::SystemBus bus_;
@@ -65,6 +70,7 @@ class Machine {
     rv32::devices::VirtioBlock* virtio_block_{};
     rv32::devices::Syscon* syscon_{};
     rv32::devices::Framebuffer* framebuffer_{};
+    IrqLines irq_lines_{};
 };
 
 } // namespace rv64::platform

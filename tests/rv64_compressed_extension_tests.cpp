@@ -10,6 +10,7 @@
 #include "rv/common/bus.hpp"
 #include "rv64/core/core.hpp"
 #include "rv64/core/decode.hpp"
+#include "rv64/core/trap.hpp"
 
 namespace {
 
@@ -243,7 +244,7 @@ void test_ialign_and_cross_word_fetch()
     core.reset({.reset_pc = base + 1U});
     CHECK(
         core.step().status ==
-        rv64::StepStatus::InstructionAddressMisaligned);
+        rv64::StepStatus::TrapTaken);
 }
 
 void test_second_halfword_fault_and_illegal_raw()
@@ -254,7 +255,7 @@ void test_second_halfword_fault_and_illegal_raw()
     rv64::Core core(short_bus);
     core.reset({.reset_pc = base + 2U});
     const auto fault = core.step();
-    CHECK(fault.status == rv64::StepStatus::InstructionAccessFault);
+    CHECK(fault.status == rv64::StepStatus::TrapTaken);
     CHECK(fault.instruction == 0x0113U);
     CHECK(fault.trap_value == base + 4U);
     CHECK(fault.bus_fault == rv::BusFault::Unmapped);
@@ -265,10 +266,14 @@ void test_second_halfword_fault_and_illegal_raw()
     rv64::Core illegal_core(illegal_bus);
     illegal_core.reset({.reset_pc = base});
     const auto illegal = illegal_core.step();
-    CHECK(illegal.status == rv64::StepStatus::IllegalInstruction);
+    CHECK(illegal.status == rv64::StepStatus::TrapTaken);
     CHECK(illegal.instruction == 0U);
     CHECK(illegal.trap_value == 0U);
-    CHECK(illegal_core.snapshot().pc == base);
+    CHECK(illegal_core.snapshot().pc == 0U);
+    CHECK(
+        illegal_core.snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::IllegalInstruction));
 }
 
 void test_cross_page_fetch()

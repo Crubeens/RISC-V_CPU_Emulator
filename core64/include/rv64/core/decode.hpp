@@ -92,8 +92,18 @@ enum class InstructionKind : std::uint8_t {
     AmoMaxuD,
     Fence,
     FenceI,
+    Csrrw,
+    Csrrs,
+    Csrrc,
+    Csrrwi,
+    Csrrsi,
+    Csrrci,
     Ecall,
     Ebreak,
+    Mret,
+    Sret,
+    Wfi,
+    SfenceVma,
 };
 
 struct DecodedInstruction {
@@ -105,6 +115,7 @@ struct DecodedInstruction {
     std::uint64_t immediate{};
     bool acquire{};
     bool release{};
+    std::uint16_t csr{};
     std::uint8_t length{4};
 
     [[nodiscard]] constexpr bool valid() const noexcept

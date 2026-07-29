@@ -88,6 +88,9 @@ Debug/Release 全量回归验收。
 
 ## RV64-M5：M/S 特权、CSR、Trap 与中断
 
+状态：已完成并通过 64 位 CSR/Trap/中断专项、RV64IMAC/Zicsr 特权裸机、
+Spike 提交轨迹及 Debug/Release 全量回归验收。
+
 内容：
 
 - 实现 RV64 M/S CSR 宽度、WARL/WPRI、别名和计数器规则。

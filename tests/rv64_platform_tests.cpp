@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <iostream>
 
+#include "rv32/devices/uart16550.hpp"
 #include "rv32/devices/ram.hpp"
 #include "rv64/platform/machine.hpp"
 
@@ -111,6 +112,46 @@ void test_boot_rejects_invalid_layouts()
         }).error == rv64::platform::BootError::RamTooSmall);
 }
 
+void test_platform_interrupt_wiring()
+{
+    rv64::platform::Machine machine({
+        .ram_size = 1ULL * 1024ULL * 1024ULL,
+        .virtual_disk_size = 512ULL,
+        .enable_framebuffer = false,
+    });
+    CHECK(
+        machine.bus().write(
+            rv64::platform::address_map::clint_base,
+            rv::AccessWidth::Word,
+            1U,
+            rv::AccessKind::Store) == rv::BusFault::None);
+    static_cast<void>(machine.step());
+    CHECK(machine.irq_lines().machine_software);
+
+    CHECK(
+        machine.bus().write(
+            rv64::platform::address_map::plic_base +
+                4U * rv64::platform::address_map::uart_irq,
+            rv::AccessWidth::Word,
+            1U,
+            rv::AccessKind::Store) == rv::BusFault::None);
+    CHECK(
+        machine.bus().write(
+            rv64::platform::address_map::plic_base + 0x2000U,
+            rv::AccessWidth::Word,
+            1U << rv64::platform::address_map::uart_irq,
+            rv::AccessKind::Store) == rv::BusFault::None);
+    CHECK(
+        machine.bus().write(
+            rv64::platform::address_map::uart_base + 1U,
+            rv::AccessWidth::Byte,
+            1U,
+            rv::AccessKind::Store) == rv::BusFault::None);
+    machine.uart().inject_received("x");
+    static_cast<void>(machine.step());
+    CHECK(machine.irq_lines().machine_external);
+}
+
 } // namespace
 
 int main()
@@ -118,6 +159,7 @@ int main()
     test_machine_executes_from_shared_physical_bus();
     test_boot_layout_and_64_bit_boot_registers();
     test_boot_rejects_invalid_layouts();
+    test_platform_interrupt_wiring();
     if (failures == 0) {
         std::cout << "All independent RV64 platform tests passed\n";
     }

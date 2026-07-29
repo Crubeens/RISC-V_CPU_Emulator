@@ -124,13 +124,19 @@ int run_raw(int argc, char** argv)
         if (result.status == StepStatus::Retired) {
             continue;
         }
-        if (result.status == StepStatus::Breakpoint) {
+        if (result.status == StepStatus::TrapTaken &&
+            (result.instruction == 0x00100073U ||
+             result.instruction == 0x00009002U)) {
             const auto state = machine.core().snapshot();
             std::cout
                 << "RV64 bare-metal program completed after "
                 << state.instructions_retired
                 << " retired instructions\n";
             return 0;
+        }
+        if (result.status == StepStatus::TrapTaken ||
+            result.status == StepStatus::WaitingForInterrupt) {
+            continue;
         }
         std::cerr
             << "RV64 guest stopped: status="

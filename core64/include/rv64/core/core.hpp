@@ -10,13 +10,14 @@ class Core {
     explicit Core(rv::CpuBus& bus) noexcept;
 
     void reset(const ResetConfig& config = {}) noexcept;
-    [[nodiscard]] StepResult step();
+    [[nodiscard]] StepResult step(const IrqLines& irq_lines = {});
     [[nodiscard]] const CpuSnapshot& snapshot() const noexcept;
+    [[nodiscard]] const IrqLines& sampled_irq_lines() const noexcept;
 
   private:
     rv::CpuBus* bus_{};
     CpuSnapshot state_{};
-    std::uint32_t hart_id_{};
+    IrqLines sampled_irq_lines_{};
 };
 
 } // namespace rv64

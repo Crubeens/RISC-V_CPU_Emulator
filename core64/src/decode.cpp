@@ -87,6 +87,20 @@ namespace {
     };
 }
 
+[[nodiscard]] constexpr DecodedInstruction make_csr(
+    std::uint32_t instruction,
+    InstructionKind kind,
+    bool immediate) noexcept
+{
+    DecodedInstruction decoded = make(
+        instruction,
+        kind,
+        immediate ? bits(instruction, 19U, 15U) : 0U);
+    decoded.csr = static_cast<std::uint16_t>(
+        bits(instruction, 31U, 20U));
+    return decoded;
+}
+
 [[nodiscard]] constexpr InstructionKind atomic_kind(
     std::uint32_t funct5,
     bool doubleword) noexcept
@@ -452,6 +466,52 @@ DecodedInstruction decode_instruction(
         }
         if (instruction == 0x00100073U) {
             return make(instruction, InstructionKind::Ebreak);
+        }
+        if (instruction == 0x30200073U) {
+            return make(instruction, InstructionKind::Mret);
+        }
+        if (instruction == 0x10200073U) {
+            return make(instruction, InstructionKind::Sret);
+        }
+        if (instruction == 0x10500073U) {
+            return make(instruction, InstructionKind::Wfi);
+        }
+        if ((instruction & 0xFE007FFFU) == 0x12000073U) {
+            return make(instruction, InstructionKind::SfenceVma);
+        }
+        switch (funct3) {
+        case 1U:
+            return make_csr(
+                instruction,
+                InstructionKind::Csrrw,
+                false);
+        case 2U:
+            return make_csr(
+                instruction,
+                InstructionKind::Csrrs,
+                false);
+        case 3U:
+            return make_csr(
+                instruction,
+                InstructionKind::Csrrc,
+                false);
+        case 5U:
+            return make_csr(
+                instruction,
+                InstructionKind::Csrrwi,
+                true);
+        case 6U:
+            return make_csr(
+                instruction,
+                InstructionKind::Csrrsi,
+                true);
+        case 7U:
+            return make_csr(
+                instruction,
+                InstructionKind::Csrrci,
+                true);
+        default:
+            break;
         }
         return make(instruction, InstructionKind::Illegal);
     default:

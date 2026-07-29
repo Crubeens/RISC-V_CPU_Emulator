@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "rv64/core/decode.hpp"
+#include "rv64/core/trap.hpp"
 #include "rv64/platform/machine.hpp"
 
 namespace {
@@ -336,7 +337,11 @@ void test_atomic_faults()
     CHECK(machine.step().status == rv64::StepStatus::Retired);
     CHECK(
         machine.step().status ==
-        rv64::StepStatus::LoadAddressMisaligned);
+        rv64::StepStatus::TrapTaken);
+    CHECK(
+        machine.core().snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::LoadAddressMisaligned));
 
     const std::uint32_t misaligned_sc[]{
         encode_i(1U, 0U, 0U, 1U, 0x13U),
@@ -346,14 +351,18 @@ void test_atomic_faults()
     CHECK(machine.step().status == rv64::StepStatus::Retired);
     CHECK(
         machine.step().status ==
-        rv64::StepStatus::StoreAddressMisaligned);
+        rv64::StepStatus::TrapTaken);
+    CHECK(
+        machine.core().snapshot().machine_csrs.mcause ==
+        static_cast<std::uint64_t>(
+            rv64::ExceptionCause::StoreAddressMisaligned));
 
     const std::uint32_t unmapped_lr[]{
         encode_atomic(0x02U, 0U, 0U, 2U, false),
     };
     load_program(machine, unmapped_lr);
     const auto load = machine.step();
-    CHECK(load.status == rv64::StepStatus::LoadAccessFault);
+    CHECK(load.status == rv64::StepStatus::TrapTaken);
     CHECK(load.bus_fault == rv::BusFault::Unmapped);
 
     const std::uint32_t unmapped_amo[]{
@@ -361,7 +370,7 @@ void test_atomic_faults()
     };
     load_program(machine, unmapped_amo);
     const auto store = machine.step();
-    CHECK(store.status == rv64::StepStatus::StoreAccessFault);
+    CHECK(store.status == rv64::StepStatus::TrapTaken);
     CHECK(store.bus_fault == rv::BusFault::Unmapped);
 
     const std::uint32_t unmapped_sc[]{
@@ -369,7 +378,7 @@ void test_atomic_faults()
     };
     load_program(machine, unmapped_sc);
     const auto conditional = machine.step();
-    CHECK(conditional.status == rv64::StepStatus::StoreAccessFault);
+    CHECK(conditional.status == rv64::StepStatus::TrapTaken);
     CHECK(conditional.bus_fault == rv::BusFault::Unmapped);
 }
 

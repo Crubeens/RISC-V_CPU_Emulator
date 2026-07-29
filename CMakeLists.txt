@@ -104,7 +104,10 @@ rv32_enable_warnings(rv32_core)
 add_library(
     rv64_core
     core64/src/core.cpp
-    core64/src/decode.cpp)
+    core64/src/csr.cpp
+    core64/src/decode.cpp
+    core64/src/interrupt.cpp
+    core64/src/trap.cpp)
 
 target_include_directories(
     rv64_core
@@ -305,6 +308,21 @@ if(RV32_BUILD_TESTS)
     add_test(
         NAME rv64_compressed_extension_tests
         COMMAND rv64_compressed_extension_tests)
+
+    add_executable(
+        rv64_privileged_tests
+        tests/rv64_privileged_tests.cpp)
+
+    target_link_libraries(
+        rv64_privileged_tests
+        PRIVATE
+            rv64_core)
+
+    rv32_enable_warnings(rv64_privileged_tests)
+
+    add_test(
+        NAME rv64_privileged_tests
+        COMMAND rv64_privileged_tests)
 
     add_executable(
         rv64_architecture_runner
