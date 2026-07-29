@@ -30,11 +30,19 @@ Machine::Machine(const MachineConfig& config)
     uart_ = &bus_.emplace_device<rv::devices::Uart16550>(
         address_map::uart_base,
         address_map::uart_size);
-    virtio_block_ =
-        &bus_.emplace_device<rv::devices::VirtioBlock>(
-            address_map::virtio_block_base,
-            address_map::virtio_block_size,
-            config.virtual_disk_size);
+    if (config.virtual_disk_storage != nullptr) {
+        virtio_block_ =
+            &bus_.emplace_device<rv::devices::VirtioBlock>(
+                address_map::virtio_block_base,
+                address_map::virtio_block_size,
+                config.virtual_disk_storage);
+    } else {
+        virtio_block_ =
+            &bus_.emplace_device<rv::devices::VirtioBlock>(
+                address_map::virtio_block_base,
+                address_map::virtio_block_size,
+                config.virtual_disk_size);
+    }
     virtio_net_ =
         &bus_.emplace_device<rv::devices::VirtioNet>(
             address_map::virtio_net_base,

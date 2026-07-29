@@ -300,6 +300,7 @@ rv_enable_warnings(rv64_core)
 add_library(
     rv_system
     common/src/system_bus.cpp
+    devices/src/block_storage.cpp
     devices/src/clint.cpp
     devices/src/framebuffer.cpp
     devices/src/goldfish_rtc.cpp
@@ -723,6 +724,21 @@ if(RV_BUILD_TESTS)
     add_test(
         NAME virtio_net_tests
         COMMAND virtio_net_tests)
+
+    add_executable(
+        block_storage_tests
+        tests/block_storage_tests.cpp)
+
+    target_link_libraries(
+        block_storage_tests
+        PRIVATE
+            rv_system)
+
+    rv_enable_warnings(block_storage_tests)
+
+    add_test(
+        NAME block_storage_tests
+        COMMAND block_storage_tests)
 
     add_executable(
         goldfish_rtc_tests

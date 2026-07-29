@@ -68,75 +68,7 @@ constexpr std::uint64_t console_poll_interval = 1024ULL;
     return true;
 }
 
-[[nodiscard]] bool read_disk_image(
-    const char* path,
-    std::vector<std::uint8_t>& image)
-{
-    if (!read_image(path, image)) {
-        return false;
-    }
-    const auto sector_size = static_cast<std::size_t>(
-        rv::devices::VirtioBlock::sector_size);
-    if ((image.size() % sector_size) != 0U) {
-        std::cerr
-            << "RV64 virtual disk size must be a multiple of "
-            << sector_size << " bytes: " << path << '\n';
-        return false;
-    }
-    return true;
-}
-
-[[nodiscard]] bool load_disk_image(
-    platform::Machine& machine,
-    const std::vector<std::uint8_t>& image)
-{
-    auto target = machine.virtio_block().disk_image();
-    if (target.size() != image.size()) {
-        std::cerr
-            << "RV64 virtual disk capacity does not match the image size\n";
-        return false;
-    }
-    std::copy(image.begin(), image.end(), target.begin());
-    machine.virtio_block().clear_dirty();
-    return true;
-}
-
-[[nodiscard]] bool write_disk_image(
-    const char* path,
-    std::span<const std::uint8_t> image)
-{
-    if (image.size() >
-        static_cast<std::size_t>(
-            std::numeric_limits<std::streamsize>::max())) {
-        std::cerr
-            << "RV64 virtual disk image is too large to write: "
-            << path << '\n';
-        return false;
-    }
-
-    std::fstream output(
-        path,
-        std::ios::binary | std::ios::in | std::ios::out);
-    if (!output) {
-        std::cerr
-            << "Cannot open RV64 virtual disk for writeback: "
-            << path << '\n';
-        return false;
-    }
-    output.write(
-        reinterpret_cast<const char*>(image.data()),
-        static_cast<std::streamsize>(image.size()));
-    output.flush();
-    if (!output) {
-        std::cerr
-            << "Cannot write RV64 virtual disk: "
-            << path << '\n';
-        return false;
-    }
-    return true;
-}
-
-[[nodiscard]] bool write_back_disk(
+[[nodiscard]] bool synchronize_disk(
     platform::Machine& machine,
     const char* path)
 {
@@ -144,12 +76,15 @@ constexpr std::uint64_t console_poll_interval = 1024ULL;
     if (path == nullptr || !disk.dirty()) {
         return true;
     }
-    if (!write_disk_image(path, disk.disk_image())) {
+    if (!disk.flush()) {
+        std::cerr
+            << "Cannot synchronize RV64 virtual disk: "
+            << path << '\n';
         return false;
     }
     disk.clear_dirty();
     std::cout
-        << "RV64 virtual disk writeback completed: "
+        << "RV64 file-backed virtual disk synchronized: "
         << path << '\n';
     return true;
 }
@@ -497,15 +432,30 @@ int run_boot(
     }
 
     const char* virtual_disk_path = nullptr;
-    std::vector<std::uint8_t> virtual_disk;
+    std::shared_ptr<rv::devices::BlockStorage> virtual_disk;
     platform::MachineConfig machine_config;
     if (use_virtual_disk) {
         virtual_disk_path = argv[5];
-        if (!read_disk_image(virtual_disk_path, virtual_disk)) {
+        try {
+            virtual_disk =
+                std::make_shared<rv::devices::FileBlockStorage>(
+                    virtual_disk_path);
+        } catch (const std::exception& error) {
+            std::cerr
+                << "Cannot open RV64 virtual disk: "
+                << virtual_disk_path << ": "
+                << error.what() << '\n';
             return 3;
         }
-        machine_config.virtual_disk_size =
-            static_cast<std::uint64_t>(virtual_disk.size());
+        if ((virtual_disk->size() %
+             rv::devices::VirtioBlock::sector_size) != 0U) {
+            std::cerr
+                << "RV64 virtual disk size must be a multiple of "
+                << rv::devices::VirtioBlock::sector_size
+                << " bytes: " << virtual_disk_path << '\n';
+            return 3;
+        }
+        machine_config.virtual_disk_storage = virtual_disk;
     }
 
 #if defined(RV_ENABLE_NETWORK)
@@ -522,11 +472,6 @@ int run_boot(
 #if defined(RV_ENABLE_NETWORK)
     machine.virtio_net().set_backend(&network_backend);
 #endif
-    if (use_virtual_disk &&
-        !load_disk_image(machine, virtual_disk)) {
-        return 3;
-    }
-
     const auto boot = machine.load_boot({
         .firmware = firmware,
         .kernel = kernel,
@@ -561,8 +506,8 @@ int run_boot(
         std::cout
             << "RV64 virtual disk loaded: "
             << virtual_disk_path
-            << " (" << virtual_disk.size()
-            << " bytes, read-write)\n";
+            << " (" << machine.virtio_block().storage_size()
+            << " bytes, file-backed read-write)\n";
     }
 #if defined(RV_ENABLE_NETWORK)
     std::cout
@@ -607,7 +552,7 @@ int run_boot(
                 << ", errors=" << host.guest_errors
                 << '\n';
 #endif
-            return write_back_disk(machine, virtual_disk_path)
+            return synchronize_disk(machine, virtual_disk_path)
                        ? result
                        : 7;
         };

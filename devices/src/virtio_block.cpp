@@ -44,17 +44,20 @@ VirtioBlock::VirtioBlock(
     PhysAddr base,
     std::uint64_t size,
     std::vector<std::uint8_t> disk_image)
-    : range_{.base = base, .size = size},
-      disk_(std::move(disk_image))
+    : range_{.base = base, .size = size}
 {
     const auto target_size =
-        rounded_disk_size(static_cast<std::uint64_t>(disk_.size()));
+        rounded_disk_size(static_cast<std::uint64_t>(disk_image.size()));
     if (target_size >
         static_cast<std::uint64_t>(
             std::numeric_limits<std::size_t>::max())) {
         throw std::invalid_argument("virtual disk image is too large");
     }
-    disk_.resize(static_cast<std::size_t>(target_size));
+    disk_image.resize(static_cast<std::size_t>(target_size));
+    auto storage =
+        std::make_shared<MemoryBlockStorage>(std::move(disk_image));
+    memory_storage_ = storage.get();
+    storage_ = std::move(storage);
     reset();
 }
 
@@ -65,12 +68,25 @@ VirtioBlock::VirtioBlock(
     : range_{.base = base, .size = size}
 {
     const auto target_size = rounded_disk_size(disk_size);
-    if (target_size >
-        static_cast<std::uint64_t>(
-            std::numeric_limits<std::size_t>::max())) {
-        throw std::invalid_argument("virtual disk image is too large");
+    auto storage = std::make_shared<MemoryBlockStorage>(target_size);
+    memory_storage_ = storage.get();
+    storage_ = std::move(storage);
+    reset();
+}
+
+VirtioBlock::VirtioBlock(
+    PhysAddr base,
+    std::uint64_t size,
+    std::shared_ptr<BlockStorage> storage)
+    : range_{.base = base, .size = size},
+      storage_(std::move(storage))
+{
+    if (storage_ == nullptr ||
+        storage_->size() == 0U ||
+        (storage_->size() % sector_size) != 0U) {
+        throw std::invalid_argument(
+            "virtual disk storage must contain whole sectors");
     }
-    disk_.resize(static_cast<std::size_t>(target_size));
     reset();
 }
 
@@ -91,7 +107,7 @@ ReadResult VirtioBlock::read(
     if (offset >= config_offset) {
         std::array<std::uint8_t, sizeof(std::uint64_t)> capacity{};
         const auto sectors =
-            static_cast<std::uint64_t>(disk_.size()) /
+            storage_->size() /
             static_cast<std::uint64_t>(sector_size);
         const auto fault = platform::write_little_endian(
             capacity,
@@ -282,12 +298,31 @@ VirtioBlockQueueState VirtioBlock::queue_state() const noexcept
 
 std::span<std::uint8_t> VirtioBlock::disk_image() noexcept
 {
-    return disk_;
+    return memory_storage_ == nullptr
+               ? std::span<std::uint8_t>{}
+               : memory_storage_->bytes();
 }
 
 std::span<const std::uint8_t> VirtioBlock::disk_image() const noexcept
 {
-    return disk_;
+    return memory_storage_ == nullptr
+               ? std::span<const std::uint8_t>{}
+               : memory_storage_->bytes();
+}
+
+std::uint64_t VirtioBlock::storage_size() const noexcept
+{
+    return storage_->size();
+}
+
+bool VirtioBlock::file_backed() const noexcept
+{
+    return storage_->file_backed();
+}
+
+bool VirtioBlock::flush() noexcept
+{
+    return storage_->flush();
 }
 
 void VirtioBlock::reset() noexcept
@@ -498,8 +533,7 @@ bool VirtioBlock::process_request(
         const auto& data_descriptor = chain[descriptor_index];
         const auto data_length =
             static_cast<std::uint64_t>(data_descriptor.length);
-        const auto disk_size =
-            static_cast<std::uint64_t>(disk_.size());
+        const auto disk_size = storage_->size();
 
         if (data_length > disk_size ||
             disk_offset > disk_size - data_length) {
@@ -515,42 +549,69 @@ bool VirtioBlock::process_request(
             break;
         }
 
-        for (std::uint64_t byte = 0;
-             byte < data_length;
-             ++byte) {
-            const auto disk_index =
-                static_cast<std::size_t>(disk_offset + byte);
+        std::array<std::uint8_t, 4096> transfer_buffer{};
+        std::uint64_t transferred = 0;
+        while (transferred < data_length) {
+            const auto remaining = data_length - transferred;
+            const auto chunk_size = static_cast<std::size_t>(
+                std::min<std::uint64_t>(
+                    remaining,
+                    transfer_buffer.size()));
+            auto chunk = std::span(transfer_buffer).first(chunk_size);
             if (request_type == request_read) {
-                if (!dma_write_value(
-                        dma,
-                        data_descriptor.address + byte,
-                        AccessWidth::Byte,
-                        disk_[disk_index])) {
+                if (!storage_->read(
+                        disk_offset + transferred,
+                        chunk)) {
                     completion_status = status_io_error;
                     break;
                 }
-                ++bytes_written;
             } else {
-                const auto byte_result = dma_read_value(
-                    dma,
-                    data_descriptor.address + byte,
-                    AccessWidth::Byte);
-                if (!byte_result.ok()) {
+                for (std::size_t byte = 0;
+                     byte < chunk_size;
+                     ++byte) {
+                    const auto byte_result = dma_read_value(
+                        dma,
+                        data_descriptor.address + transferred + byte,
+                        AccessWidth::Byte);
+                    if (!byte_result.ok()) {
+                        completion_status = status_io_error;
+                        break;
+                    }
+                    chunk[byte] =
+                        static_cast<std::uint8_t>(byte_result.value);
+                }
+                if (completion_status != status_ok ||
+                    !storage_->write(
+                        disk_offset + transferred,
+                        chunk)) {
                     completion_status = status_io_error;
                     break;
                 }
-                disk_[disk_index] =
-                    static_cast<std::uint8_t>(byte_result.value);
+                disk_dirty_ = true;
             }
-            ++statistics_.bytes_transferred;
+            if (request_type == request_read) {
+                for (std::size_t byte = 0;
+                     byte < chunk_size;
+                     ++byte) {
+                    if (!dma_write_value(
+                            dma,
+                            data_descriptor.address + transferred + byte,
+                            AccessWidth::Byte,
+                            chunk[byte])) {
+                        completion_status = status_io_error;
+                        break;
+                    }
+                    ++bytes_written;
+                }
+                if (completion_status != status_ok) {
+                    break;
+                }
+            }
+            statistics_.bytes_transferred += chunk_size;
+            transferred += chunk_size;
         }
 
         disk_offset += data_length;
-    }
-
-    if (request_type == request_write &&
-        completion_status == status_ok) {
-        disk_dirty_ = true;
     }
 
     const bool status_written = dma_write_value(

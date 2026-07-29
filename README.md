@@ -12,7 +12,7 @@
   LP64 Buildroot 与 LP64D Debian ext4、SDL、独立性能统计、参考/快速执行模式，以及
   RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS、Goldfish RTC 和
   完整的 RV64F/RV64D 标量浮点实现。
-- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 131。
+- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 132。
 
 ## 架构边界
 
@@ -42,7 +42,8 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 - M/S/U 特权级、精确异常、中断委托、`MRET`、`SRET` 和 `WFI`。
 - Sv32 与 Sv39、页权限、A/D 位、ASID、TLB 和 `SFENCE.VMA`。
 - OpenSBI 固件、Linux 内核和 DTB 的固定启动布局。
-- Legacy VirtIO MMIO Block 和可回写的 ext4 虚拟磁盘。
+- Legacy VirtIO MMIO Block；RV64 使用按请求读写和同步的文件后端，
+  大磁盘不再完整复制到宿主内存。
 - 架构无关的 VirtIO MMIO Net；当前只由 RV64 平台装配。
 - RV64 libslirp 用户态 NAT、DHCP、DNS 和无需管理员权限的宿主网络。
 - RV64 Goldfish RTC，以宿主实时时间初始化客户机。
@@ -166,5 +167,6 @@ Debian 13 riscv64 APT 镜像可由
 - RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 - RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
 
-RV64-M1 至 M10 已完成。当前下一阶段是 RV64-M11；RV64 对外 ISA 已更新为
-`rv64imafdc_zicntr_zicsr_zifencei`，既有 M1–M8 验收边界保持冻结。
+RV64-M1 至 M10 与 M11.1 已完成。当前继续 RV64-M11 的可配置 RAM 和 APT
+验收；RV64 对外 ISA 已更新为 `rv64imafdc_zicntr_zicsr_zifencei`，既有
+M1–M8 验收边界保持冻结。

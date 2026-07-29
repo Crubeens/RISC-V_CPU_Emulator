@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <span>
 
 #include "rv64/core/core.hpp"
@@ -16,6 +17,7 @@ class Plic;
 class Ram;
 class Syscon;
 class Uart16550;
+class BlockStorage;
 class VirtioBlock;
 class VirtioNet;
 } // namespace rv::devices
@@ -25,6 +27,7 @@ namespace rv64::platform {
 struct MachineConfig {
     std::uint64_t ram_size{address_map::default_dram_size};
     std::uint64_t virtual_disk_size{16ULL * 1024ULL * 1024ULL};
+    std::shared_ptr<rv::devices::BlockStorage> virtual_disk_storage{};
     std::uint32_t framebuffer_width{640};
     std::uint32_t framebuffer_height{480};
     std::uint32_t framebuffer_bytes_per_pixel{4};

@@ -1,11 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
 
 #include "rv/platform/device.hpp"
+#include "rv/devices/block_storage.hpp"
 
 namespace rv::devices {
 
@@ -48,6 +50,11 @@ class VirtioBlock final : public platform::Device {
         std::uint64_t size,
         std::uint64_t disk_size);
 
+    VirtioBlock(
+        PhysAddr base,
+        std::uint64_t size,
+        std::shared_ptr<BlockStorage> storage);
+
     [[nodiscard]] std::string_view name() const noexcept override;
     [[nodiscard]] platform::AddressRange range() const noexcept override;
 
@@ -79,6 +86,9 @@ class VirtioBlock final : public platform::Device {
 
     [[nodiscard]] std::span<std::uint8_t> disk_image() noexcept;
     [[nodiscard]] std::span<const std::uint8_t> disk_image() const noexcept;
+    [[nodiscard]] std::uint64_t storage_size() const noexcept;
+    [[nodiscard]] bool file_backed() const noexcept;
+    [[nodiscard]] bool flush() noexcept;
 
   private:
     struct Descriptor {
@@ -150,7 +160,8 @@ class VirtioBlock final : public platform::Device {
     [[nodiscard]] bool queue_configured() const noexcept;
 
     platform::AddressRange range_;
-    std::vector<std::uint8_t> disk_;
+    std::shared_ptr<BlockStorage> storage_;
+    MemoryBlockStorage* memory_storage_{};
 
     std::uint32_t device_features_select_{};
     std::uint32_t driver_features_select_{};
