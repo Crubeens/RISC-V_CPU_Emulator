@@ -104,6 +104,9 @@ Spike 提交轨迹及 Debug/Release 全量回归验收。
 
 ## RV64-M6：Sv39、TLB 与 SFENCE.VMA
 
+状态：已完成并通过 Sv39 专项、整核取指/访存/原子链路、高半地址裸机、
+Spike 提交轨迹及 Debug/Release、RV32 全量回归验收。
+
 内容：
 
 - 实现三级 Sv39、64 位 PTE、4 KiB/2 MiB/1 GiB 页。
@@ -114,6 +117,8 @@ Spike 提交轨迹及 Debug/Release 全量回归验收。
 
 - 覆盖页大小、权限、非规范地址、错误 PTE、A/D 更新和总线失败。
 - TLB 命中与失效专项测试通过。
+- 高半规范地址裸机程序进入 S-mode，完成翻译访存、精确失效和页故障检查。
+- 与 Spike RV64 Sv39 Commit Trace 一致。
 
 ## RV64-M7：OpenSBI、Linux 与差分验收
 

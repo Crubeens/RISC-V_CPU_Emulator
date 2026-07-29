@@ -107,6 +107,7 @@ add_library(
     core64/src/csr.cpp
     core64/src/decode.cpp
     core64/src/interrupt.cpp
+    core64/src/mmu.cpp
     core64/src/trap.cpp)
 
 target_include_directories(
@@ -323,6 +324,21 @@ if(RV32_BUILD_TESTS)
     add_test(
         NAME rv64_privileged_tests
         COMMAND rv64_privileged_tests)
+
+    add_executable(
+        rv64_mmu_tests
+        tests/rv64_mmu_tests.cpp)
+
+    target_link_libraries(
+        rv64_mmu_tests
+        PRIVATE
+            rv64_core)
+
+    rv32_enable_warnings(rv64_mmu_tests)
+
+    add_test(
+        NAME rv64_mmu_tests
+        COMMAND rv64_mmu_tests)
 
     add_executable(
         rv64_architecture_runner

@@ -1,6 +1,7 @@
 #include "rv64/core/csr.hpp"
 
 #include "rv64/core/interrupt.hpp"
+#include "rv64/core/mmu.hpp"
 
 namespace rv64 {
 
@@ -325,7 +326,8 @@ void CsrFile::write_validated(
     case csr_address::satp: {
         const Xlen mode = value >> 60U;
         if (mode == 0U || mode == 8U) {
-            state_->supervisor_csrs.satp = value;
+            state_->supervisor_csrs.satp =
+                sanitize_satp(value);
         }
         break;
     }

@@ -9,6 +9,7 @@
 #include "rv64/core/csr.hpp"
 #include "rv64/core/decode.hpp"
 #include "rv64/core/interrupt.hpp"
+#include "rv64/core/mmu.hpp"
 #include "rv64/core/trap.hpp"
 
 namespace rv64 {
@@ -117,6 +118,7 @@ void Core::reset(const ResetConfig& config) noexcept
     state_.registers[10] = config.hart_id;
     state_.registers[11] = config.boot_argument;
     sampled_irq_lines_ = {};
+    tlb_.clear();
 }
 
 StepResult Core::step(const IrqLines& irq_lines)
@@ -188,8 +190,22 @@ StepResult Core::step(const IrqLines& irq_lines)
             rv::BusFault::Misaligned);
     }
 
-    const rv::ReadResult first = bus_->read(
+    const TranslationResult first_translation = tlb_.translate(
+        *bus_,
+        state_,
         pc,
+        MemoryAccessType::InstructionFetch);
+    if (!first_translation.ready()) {
+        return trap(
+            first_translation.status == TranslationStatus::PageFault
+                ? ExceptionCause::InstructionPageFault
+                : ExceptionCause::InstructionAccessFault,
+            0,
+            pc,
+            first_translation.bus_fault);
+    }
+    const rv::ReadResult first = bus_->read(
+        first_translation.physical_address,
         rv::AccessWidth::HalfWord,
         rv::AccessKind::InstructionFetch);
     if (!first.ok()) {
@@ -207,8 +223,23 @@ StepResult Core::step(const IrqLines& irq_lines)
         decoded = decode_compressed_instruction(
             static_cast<std::uint16_t>(instruction));
     } else {
-        const rv::ReadResult second = bus_->read(
+        const TranslationResult second_translation = tlb_.translate(
+            *bus_,
+            state_,
             pc + 2U,
+            MemoryAccessType::InstructionFetch);
+        if (!second_translation.ready()) {
+            return trap(
+                second_translation.status ==
+                        TranslationStatus::PageFault
+                    ? ExceptionCause::InstructionPageFault
+                    : ExceptionCause::InstructionAccessFault,
+                instruction,
+                pc + 2U,
+                second_translation.bus_fault);
+        }
+        const rv::ReadResult second = bus_->read(
+            second_translation.physical_address,
             rv::AccessWidth::HalfWord,
             rv::AccessKind::InstructionFetch);
         if (!second.ok()) {
@@ -521,16 +552,42 @@ StepResult Core::step(const IrqLines& irq_lines)
                 address,
                 rv::BusFault::Misaligned);
         }
+        const MemoryAccessType access =
+            load_reserved ? MemoryAccessType::Load
+                          : MemoryAccessType::Store;
+        const TranslationResult translation = tlb_.translate(
+            *bus_,
+            state_,
+            address,
+            access);
+        if (!translation.ready()) {
+            const bool page_fault =
+                translation.status ==
+                TranslationStatus::PageFault;
+            return trap(
+                load_reserved
+                    ? (page_fault
+                           ? ExceptionCause::LoadPageFault
+                           : ExceptionCause::LoadAccessFault)
+                    : (page_fault
+                           ? ExceptionCause::StorePageFault
+                           : ExceptionCause::StoreAccessFault),
+                instruction,
+                address,
+                translation.bus_fault);
+        }
+        const rv::PhysAddr physical_address =
+            translation.physical_address;
 
         if (load_reserved) {
             const rv::ReadResult result =
                 doubleword
                     ? bus_->load_reserved_doubleword(
                           static_cast<std::uint32_t>(state_.hart_id),
-                          address)
+                          physical_address)
                     : bus_->load_reserved_word(
                           static_cast<std::uint32_t>(state_.hart_id),
-                          address);
+                          physical_address);
             if (!result.ok()) {
                 return trap(
                     ExceptionCause::LoadAccessFault,
@@ -549,11 +606,11 @@ StepResult Core::step(const IrqLines& irq_lines)
                 doubleword
                     ? bus_->store_conditional_doubleword(
                           static_cast<std::uint32_t>(state_.hart_id),
-                          address,
+                          physical_address,
                           rs2)
                     : bus_->store_conditional_word(
                           static_cast<std::uint32_t>(state_.hart_id),
-                          address,
+                          physical_address,
                           static_cast<std::uint32_t>(rs2));
             if (!result.ok()) {
                 return trap(
@@ -608,7 +665,7 @@ StepResult Core::step(const IrqLines& irq_lines)
             const rv::AtomicResult64 result =
                 bus_->atomic_doubleword(
                     static_cast<std::uint32_t>(state_.hart_id),
-                    address,
+                    physical_address,
                     operation,
                     rs2);
             if (!result.ok()) {
@@ -622,7 +679,7 @@ StepResult Core::step(const IrqLines& irq_lines)
         } else {
             const rv::AtomicResult result = bus_->atomic_word(
                 static_cast<std::uint32_t>(state_.hart_id),
-                address,
+                physical_address,
                 operation,
                 static_cast<std::uint32_t>(rs2));
             if (!result.ok()) {
@@ -683,8 +740,25 @@ StepResult Core::step(const IrqLines& irq_lines)
                 address,
                 rv::BusFault::Misaligned);
         }
+        const TranslationResult translation = tlb_.translate(
+            *bus_,
+            state_,
+            address,
+            MemoryAccessType::Load);
+        if (!translation.ready()) {
+            return trap(
+                translation.status == TranslationStatus::PageFault
+                    ? ExceptionCause::LoadPageFault
+                    : ExceptionCause::LoadAccessFault,
+                instruction,
+                address,
+                translation.bus_fault);
+        }
         const rv::ReadResult loaded =
-            bus_->read(address, width, rv::AccessKind::Load);
+            bus_->read(
+                translation.physical_address,
+                width,
+                rv::AccessKind::Load);
         if (!loaded.ok()) {
             return trap(
                 ExceptionCause::LoadAccessFault,
@@ -717,8 +791,22 @@ StepResult Core::step(const IrqLines& irq_lines)
                 address,
                 rv::BusFault::Misaligned);
         }
-        const rv::BusFault fault = bus_->write(
+        const TranslationResult translation = tlb_.translate(
+            *bus_,
+            state_,
             address,
+            MemoryAccessType::Store);
+        if (!translation.ready()) {
+            return trap(
+                translation.status == TranslationStatus::PageFault
+                    ? ExceptionCause::StorePageFault
+                    : ExceptionCause::StoreAccessFault,
+                instruction,
+                address,
+                translation.bus_fault);
+        }
+        const rv::BusFault fault = bus_->write(
+            translation.physical_address,
             width,
             rs2,
             rv::AccessKind::Store);
@@ -851,6 +939,14 @@ StepResult Core::step(const IrqLines& irq_lines)
                 instruction,
                 instruction);
         }
+        tlb_.sfence_vma(
+            decoded.rs1 == 0U
+                ? std::nullopt
+                : std::optional<Xlen>{rs1},
+            decoded.rs2 == 0U
+                ? std::nullopt
+                : std::optional<std::uint16_t>{
+                      static_cast<std::uint16_t>(rs2)});
         break;
     case InstructionKind::Illegal:
         return trap(
@@ -907,6 +1003,11 @@ const CpuSnapshot& Core::snapshot() const noexcept
 const IrqLines& Core::sampled_irq_lines() const noexcept
 {
     return sampled_irq_lines_;
+}
+
+std::size_t Core::tlb_entries() const noexcept
+{
+    return tlb_.valid_entries();
 }
 
 } // namespace rv64

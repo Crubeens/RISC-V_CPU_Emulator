@@ -7,10 +7,11 @@
 VirtIO ext4 根文件系统。SDL 窗口可以显示 UART 终端或线性
 Framebuffer，键盘输入会送入虚拟 UART。
 
-RV64 开发已完成 **RV64-M5**：新增独立 RV64IMAC 核心、M/S/U
+RV64 开发已完成 **RV64-M6**：新增独立 RV64IMAC 核心、M/S/U
 特权级、64 位 CSR、Trap/中断链路、RV64 Machine、运行时 CPU 选择和
-LP64 裸机入口。RV64 的 Sv39 和 OpenSBI/Linux 启动属于后续阶段，
-当前不能用 RV64 启动 Linux。
+LP64 裸机入口，并已实现三级 Sv39、64 位 PTE、独立 TLB 和
+`SFENCE.VMA`。RV64 的 OpenSBI/Linux 启动属于后续阶段，当前仍不能用
+RV64 启动 Linux。
 
 ## 当前包含
 
@@ -36,6 +37,9 @@ LP64 裸机入口。RV64 的 Sv39 和 OpenSBI/Linux 启动属于后续阶段，
 - RV64C：全部整数压缩指令、IALIGN=16、半字取指和跨页 32 位取指。
 - RV64 特权态：M/S/U 模式、Zicsr、异常与中断委托、`MRET/SRET/WFI`、
   CLINT/PLIC/UART/VirtIO 中断采样和 64 位计数器。
+- RV64 Sv39：三级页表、4 KiB/2 MiB/1 GiB 页、非规范地址检查、
+  `SUM/MXR/MPRV`、A/D 自动更新、16 位 ASID、全局页、独立 64 项 TLB
+  和四种 `SFENCE.VMA` 失效范围。
 
 RV32 CPU 核心位于 `core/`，RV64 CPU 核心位于 `core64/`；两者都只依赖
 抽象总线，不依赖 SDL 或任何具体外设实现。

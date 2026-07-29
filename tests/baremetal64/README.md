@@ -47,3 +47,12 @@ S-mode with `MRET`, delegates a supervisor `ECALL`, returns with `SRET`, waits
 with `WFI`, handles a CLINT machine-timer interrupt and validates an illegal
 S-mode machine-CSR access. The accepted output names are
 `build/debug/architecture64/rv64priv-m5.elf` and `rv64priv-m5.bin`.
+
+For RV64-M6, use `-march=rv64imac_zicsr` with `sv39_translation.S`. It builds
+three-level page tables, enters a high-half Sv39 supervisor mapping, verifies
+translated instruction/data access, executes `SFENCE.VMA`, checks an unmapped
+load page fault and is suitable for Spike commit-trace comparison. Automatic
+A/D updates are covered by `rv64_mmu_tests`, because the fixed Spike profile
+uses fault-on-clear A/D behavior. The accepted output names are
+`build/debug/architecture64/rv64priv-m6-sv39.elf` and
+`rv64priv-m6-sv39.bin`.
