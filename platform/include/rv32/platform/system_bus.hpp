@@ -60,6 +60,7 @@ class SystemBus final : public CpuBus, public DmaAccess {
     performance_counters() const noexcept;
 
     void reset_performance_counters() noexcept;
+    void clear_reservations() noexcept;
 
     [[nodiscard]] ReadResult read(
         PhysAddr address,
@@ -87,6 +88,21 @@ class SystemBus final : public CpuBus, public DmaAccess {
         AmoOperation operation,
         std::uint32_t operand) override;
 
+    [[nodiscard]] ReadResult load_reserved_doubleword(
+        std::uint32_t hart_id,
+        PhysAddr address) override;
+
+    [[nodiscard]] StoreConditionalResult store_conditional_doubleword(
+        std::uint32_t hart_id,
+        PhysAddr address,
+        std::uint64_t value) override;
+
+    [[nodiscard]] AtomicResult64 atomic_doubleword(
+        std::uint32_t hart_id,
+        PhysAddr address,
+        AmoOperation operation,
+        std::uint64_t operand) override;
+
     [[nodiscard]] std::uint64_t read_time() const noexcept override;
 
     [[nodiscard]] bool instruction_cacheable(
@@ -104,6 +120,7 @@ class SystemBus final : public CpuBus, public DmaAccess {
   private:
     struct Reservation {
         PhysAddr address{};
+        AccessWidth width{AccessWidth::Word};
         std::uint64_t write_epoch{};
     };
 

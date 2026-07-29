@@ -85,6 +85,11 @@ void SystemBus::reset_performance_counters() noexcept
     performance_counters_ = {};
 }
 
+void SystemBus::clear_reservations() noexcept
+{
+    reservations_.clear();
+}
+
 ReadResult SystemBus::read(
     PhysAddr address,
     AccessWidth width,
@@ -145,6 +150,7 @@ ReadResult SystemBus::load_reserved_word(
     if (result.ok()) {
         reservations_[hart_id] = {
             .address = address,
+            .width = AccessWidth::Word,
             .write_epoch = write_epoch_,
         };
     }
@@ -167,6 +173,7 @@ StoreConditionalResult SystemBus::store_conditional_word(
     const bool matches =
         reservation != reservations_.end() &&
         reservation->second.address == address &&
+        reservation->second.width == AccessWidth::Word &&
         reservation->second.write_epoch == write_epoch_;
 
     if (reservation != reservations_.end()) {
@@ -258,6 +265,136 @@ AtomicResult SystemBus::atomic_word(
 
     const auto fault =
         write(address, AccessWidth::Word, replacement, AccessKind::Atomic);
+    return {
+        .fault = fault,
+        .original_value = original,
+    };
+}
+
+ReadResult SystemBus::load_reserved_doubleword(
+    std::uint32_t hart_id,
+    PhysAddr address)
+{
+    if ((address & 0x7ULL) != 0U) {
+        return {.fault = BusFault::Misaligned};
+    }
+
+    const auto result =
+        read(address, AccessWidth::DoubleWord, AccessKind::Atomic);
+    if (result.ok()) {
+        reservations_[hart_id] = {
+            .address = address,
+            .width = AccessWidth::DoubleWord,
+            .write_epoch = write_epoch_,
+        };
+    }
+    return result;
+}
+
+StoreConditionalResult SystemBus::store_conditional_doubleword(
+    std::uint32_t hart_id,
+    PhysAddr address,
+    std::uint64_t value)
+{
+    if ((address & 0x7ULL) != 0U) {
+        return {
+            .fault = BusFault::Misaligned,
+            .succeeded = false,
+        };
+    }
+
+    const auto reservation = reservations_.find(hart_id);
+    const bool matches =
+        reservation != reservations_.end() &&
+        reservation->second.address == address &&
+        reservation->second.width == AccessWidth::DoubleWord &&
+        reservation->second.write_epoch == write_epoch_;
+    if (reservation != reservations_.end()) {
+        reservations_.erase(reservation);
+    }
+
+    if (find_device(address, AccessWidth::DoubleWord) == nullptr) {
+        return {
+            .fault = BusFault::Unmapped,
+            .succeeded = false,
+        };
+    }
+    if (!matches) {
+        return {
+            .fault = BusFault::None,
+            .succeeded = false,
+        };
+    }
+
+    const auto fault = write(
+        address,
+        AccessWidth::DoubleWord,
+        value,
+        AccessKind::Atomic);
+    return {
+        .fault = fault,
+        .succeeded = fault == BusFault::None,
+    };
+}
+
+AtomicResult64 SystemBus::atomic_doubleword(
+    std::uint32_t hart_id,
+    PhysAddr address,
+    AmoOperation operation,
+    std::uint64_t operand)
+{
+    static_cast<void>(hart_id);
+    if ((address & 0x7ULL) != 0U) {
+        return {.fault = BusFault::Misaligned};
+    }
+
+    const auto read_result =
+        read(address, AccessWidth::DoubleWord, AccessKind::Atomic);
+    if (!read_result.ok()) {
+        return {.fault = read_result.fault};
+    }
+
+    const std::uint64_t original = read_result.value;
+    std::uint64_t replacement{};
+    const auto signed_original = std::bit_cast<std::int64_t>(original);
+    const auto signed_operand = std::bit_cast<std::int64_t>(operand);
+    switch (operation) {
+    case AmoOperation::Swap:
+        replacement = operand;
+        break;
+    case AmoOperation::Add:
+        replacement = original + operand;
+        break;
+    case AmoOperation::Xor:
+        replacement = original ^ operand;
+        break;
+    case AmoOperation::And:
+        replacement = original & operand;
+        break;
+    case AmoOperation::Or:
+        replacement = original | operand;
+        break;
+    case AmoOperation::Min:
+        replacement = std::bit_cast<std::uint64_t>(
+            std::min(signed_original, signed_operand));
+        break;
+    case AmoOperation::Max:
+        replacement = std::bit_cast<std::uint64_t>(
+            std::max(signed_original, signed_operand));
+        break;
+    case AmoOperation::MinUnsigned:
+        replacement = std::min(original, operand);
+        break;
+    case AmoOperation::MaxUnsigned:
+        replacement = std::max(original, operand);
+        break;
+    }
+
+    const auto fault = write(
+        address,
+        AccessWidth::DoubleWord,
+        replacement,
+        AccessKind::Atomic);
     return {
         .fault = fault,
         .original_value = original,

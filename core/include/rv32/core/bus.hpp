@@ -8,6 +8,7 @@ using rv::AccessKind;
 using rv::AccessWidth;
 using rv::AmoOperation;
 using rv::AtomicResult;
+using rv::AtomicResult64;
 using rv::BusFault;
 using rv::CpuBus;
 using rv::PhysAddr;

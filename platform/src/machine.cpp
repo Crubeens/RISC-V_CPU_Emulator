@@ -60,6 +60,7 @@ void Machine::reset(const ResetConfig& config)
 {
     irq_lines_ = {};
     bus_.reset_performance_counters();
+    bus_.clear_reservations();
     core_.reset(config);
 }
 

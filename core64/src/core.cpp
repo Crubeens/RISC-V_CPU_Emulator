@@ -122,6 +122,7 @@ Core::Core(rv::CpuBus& bus) noexcept : bus_(&bus)
 void Core::reset(const ResetConfig& config) noexcept
 {
     state_ = {};
+    hart_id_ = static_cast<std::uint32_t>(config.hart_id);
     state_.pc = config.reset_pc;
     state_.registers[10] = config.hart_id;
     state_.registers[11] = config.boot_argument;
@@ -408,6 +409,164 @@ StepResult Core::step()
         const std::uint32_t rhs = static_cast<std::uint32_t>(rs2);
         register_value = sign_extend_word(
             rhs == 0U ? lhs : lhs % rhs);
+        break;
+    }
+    case InstructionKind::LrW:
+    case InstructionKind::ScW:
+    case InstructionKind::AmoSwapW:
+    case InstructionKind::AmoAddW:
+    case InstructionKind::AmoXorW:
+    case InstructionKind::AmoAndW:
+    case InstructionKind::AmoOrW:
+    case InstructionKind::AmoMinW:
+    case InstructionKind::AmoMaxW:
+    case InstructionKind::AmoMinuW:
+    case InstructionKind::AmoMaxuW:
+    case InstructionKind::LrD:
+    case InstructionKind::ScD:
+    case InstructionKind::AmoSwapD:
+    case InstructionKind::AmoAddD:
+    case InstructionKind::AmoXorD:
+    case InstructionKind::AmoAndD:
+    case InstructionKind::AmoOrD:
+    case InstructionKind::AmoMinD:
+    case InstructionKind::AmoMaxD:
+    case InstructionKind::AmoMinuD:
+    case InstructionKind::AmoMaxuD: {
+        const bool doubleword =
+            ((instruction >> 12U) & 0x7U) == 3U;
+        const rv::AccessWidth width =
+            doubleword ? rv::AccessWidth::DoubleWord
+                       : rv::AccessWidth::Word;
+        const std::uint64_t address = rs1;
+        const bool load_reserved =
+            decoded.kind == InstructionKind::LrW ||
+            decoded.kind == InstructionKind::LrD;
+        const bool store_conditional =
+            decoded.kind == InstructionKind::ScW ||
+            decoded.kind == InstructionKind::ScD;
+        if (!aligned(address, width)) {
+            return failure(
+                load_reserved ? StepStatus::LoadAddressMisaligned
+                              : StepStatus::StoreAddressMisaligned,
+                pc,
+                instruction,
+                address,
+                rv::BusFault::Misaligned);
+        }
+
+        if (load_reserved) {
+            const rv::ReadResult result =
+                doubleword
+                    ? bus_->load_reserved_doubleword(hart_id_, address)
+                    : bus_->load_reserved_word(hart_id_, address);
+            if (!result.ok()) {
+                return failure(
+                    StepStatus::LoadAccessFault,
+                    pc,
+                    instruction,
+                    address,
+                    result.fault);
+            }
+            register_value =
+                doubleword ? result.value
+                           : sign_extend_word(result.value);
+            break;
+        }
+
+        if (store_conditional) {
+            const rv::StoreConditionalResult result =
+                doubleword
+                    ? bus_->store_conditional_doubleword(
+                          hart_id_,
+                          address,
+                          rs2)
+                    : bus_->store_conditional_word(
+                          hart_id_,
+                          address,
+                          static_cast<std::uint32_t>(rs2));
+            if (!result.ok()) {
+                return failure(
+                    StepStatus::StoreAccessFault,
+                    pc,
+                    instruction,
+                    address,
+                    result.fault);
+            }
+            register_value = result.succeeded ? 0U : 1U;
+            break;
+        }
+
+        rv::AmoOperation operation = rv::AmoOperation::Swap;
+        switch (decoded.kind) {
+        case InstructionKind::AmoAddW:
+        case InstructionKind::AmoAddD:
+            operation = rv::AmoOperation::Add;
+            break;
+        case InstructionKind::AmoXorW:
+        case InstructionKind::AmoXorD:
+            operation = rv::AmoOperation::Xor;
+            break;
+        case InstructionKind::AmoAndW:
+        case InstructionKind::AmoAndD:
+            operation = rv::AmoOperation::And;
+            break;
+        case InstructionKind::AmoOrW:
+        case InstructionKind::AmoOrD:
+            operation = rv::AmoOperation::Or;
+            break;
+        case InstructionKind::AmoMinW:
+        case InstructionKind::AmoMinD:
+            operation = rv::AmoOperation::Min;
+            break;
+        case InstructionKind::AmoMaxW:
+        case InstructionKind::AmoMaxD:
+            operation = rv::AmoOperation::Max;
+            break;
+        case InstructionKind::AmoMinuW:
+        case InstructionKind::AmoMinuD:
+            operation = rv::AmoOperation::MinUnsigned;
+            break;
+        case InstructionKind::AmoMaxuW:
+        case InstructionKind::AmoMaxuD:
+            operation = rv::AmoOperation::MaxUnsigned;
+            break;
+        default:
+            break;
+        }
+
+        if (doubleword) {
+            const rv::AtomicResult64 result =
+                bus_->atomic_doubleword(
+                    hart_id_,
+                    address,
+                    operation,
+                    rs2);
+            if (!result.ok()) {
+                return failure(
+                    StepStatus::StoreAccessFault,
+                    pc,
+                    instruction,
+                    address,
+                    result.fault);
+            }
+            register_value = result.original_value;
+        } else {
+            const rv::AtomicResult result = bus_->atomic_word(
+                hart_id_,
+                address,
+                operation,
+                static_cast<std::uint32_t>(rs2));
+            if (!result.ok()) {
+                return failure(
+                    StepStatus::StoreAccessFault,
+                    pc,
+                    instruction,
+                    address,
+                    result.fault);
+            }
+            register_value = sign_extend_word(result.original_value);
+        }
         break;
     }
     case InstructionKind::Lb:

@@ -80,6 +80,16 @@ struct AtomicResult {
     }
 };
 
+struct AtomicResult64 {
+    BusFault fault{BusFault::None};
+    std::uint64_t original_value{};
+
+    [[nodiscard]] constexpr bool ok() const noexcept
+    {
+        return fault == BusFault::None;
+    }
+};
+
 class CpuBus {
   public:
     virtual ~CpuBus() = default;
@@ -109,6 +119,40 @@ class CpuBus {
         PhysAddr address,
         AmoOperation operation,
         std::uint32_t operand) = 0;
+
+    [[nodiscard]] virtual ReadResult load_reserved_doubleword(
+        std::uint32_t hart_id,
+        PhysAddr address)
+    {
+        static_cast<void>(hart_id);
+        static_cast<void>(address);
+        return {.fault = BusFault::Unsupported};
+    }
+
+    [[nodiscard]] virtual StoreConditionalResult
+    store_conditional_doubleword(
+        std::uint32_t hart_id,
+        PhysAddr address,
+        std::uint64_t value)
+    {
+        static_cast<void>(hart_id);
+        static_cast<void>(address);
+        static_cast<void>(value);
+        return {.fault = BusFault::Unsupported};
+    }
+
+    [[nodiscard]] virtual AtomicResult64 atomic_doubleword(
+        std::uint32_t hart_id,
+        PhysAddr address,
+        AmoOperation operation,
+        std::uint64_t operand)
+    {
+        static_cast<void>(hart_id);
+        static_cast<void>(address);
+        static_cast<void>(operation);
+        static_cast<void>(operand);
+        return {.fault = BusFault::Unsupported};
+    }
 
     [[nodiscard]] virtual std::uint64_t read_time() const noexcept = 0;
 

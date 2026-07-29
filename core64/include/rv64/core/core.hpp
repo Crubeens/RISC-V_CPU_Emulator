@@ -16,6 +16,7 @@ class Core {
   private:
     rv::CpuBus* bus_{};
     CpuSnapshot state_{};
+    std::uint32_t hart_id_{};
 };
 
 } // namespace rv64

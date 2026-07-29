@@ -31,3 +31,7 @@ For the RV64-M2 image, replace `-march=rv64i` with `-march=rv64im` and
 `start.S` with `m_extension.S`. It checks all RV64M instruction families,
 including high-half multiplication, division by zero, signed overflow and
 word-result sign extension.
+
+For RV64-M3, use `-march=rv64ima` with `atomic_extension.S`. The image
+executes LR/SC and every AMO operation in both `.w` and `.d` forms, including
+the `aq`/`rl` ordering-bit encodings.

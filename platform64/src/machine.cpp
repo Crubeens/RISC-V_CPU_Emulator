@@ -50,6 +50,7 @@ Machine::~Machine() = default;
 void Machine::reset(const ResetConfig& config)
 {
     bus_.reset_performance_counters();
+    bus_.clear_reservations();
     core_.reset(config);
 }
 

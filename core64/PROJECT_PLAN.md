@@ -56,6 +56,9 @@ Debug/Release 全量回归验收。
 
 ## RV64-M3：RV64A
 
+状态：已完成并通过 Word/DoubleWord 专项边界、RV64IMA/LP64 裸机、
+Spike 提交轨迹及 Debug/Release 全量回归验收。
+
 内容：
 
 - 实现 `LR/SC.W`、全部 AMO.W，并按 RV64 规则符号扩展返回值。

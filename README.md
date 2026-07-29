@@ -7,10 +7,10 @@
 VirtIO ext4 根文件系统。SDL 窗口可以显示 UART 终端或线性
 Framebuffer，键盘输入会送入虚拟 UART。
 
-RV64 开发已完成 **RV64-M2**：新增独立 RV64I 核心、RV64M 乘除法、
-RV64 Machine、运行时 CPU 选择和 RV64IM/LP64 裸机入口。RV64 的 A/C
-扩展、特权态、Sv39 和 OpenSBI/Linux 启动属于后续阶段，当前不能用
-RV64 启动 Linux。
+RV64 开发已完成 **RV64-M3**：新增独立 RV64I 核心、RV64M 乘除法、
+RV64A 原子指令、RV64 Machine、运行时 CPU 选择和 RV64IMA/LP64 裸机
+入口。RV64 的 C 扩展、特权态、Sv39 和 OpenSBI/Linux 启动属于后续
+阶段，当前不能用 RV64 启动 Linux。
 
 ## 当前包含
 
@@ -31,6 +31,8 @@ RV64 启动 Linux。
   独立平台适配层和裸机测试。
 - RV64M：64 位及 W 类乘法、三种高半乘法、除法与余数，并覆盖除零和
   最小负数除以 `-1` 的边界语义。
+- RV64A：LR/SC.W、LR/SC.D、全部 AMO.W/AMO.D、aq/rl 译码，以及
+  reservation 成功、失败和失效语义。
 
 RV32 CPU 核心位于 `core/`，RV64 CPU 核心位于 `core64/`；两者都只依赖
 抽象总线，不依赖 SDL 或任何具体外设实现。
@@ -140,7 +142,7 @@ build/release/rv32_emulator.exe --gui --boot-disk `
 
 ```text
 core/          自研 CPU 核心
-core64/        独立 RV64IM CPU 核心及 RV64 实施计划
+core64/        独立 RV64IMA CPU 核心及 RV64 实施计划
 common/        RV32/RV64 共用的架构无关总线类型
 platform/      总线、启动布局和整机装配
 platform64/    RV64 Machine 适配层

@@ -68,6 +68,28 @@ enum class InstructionKind : std::uint8_t {
     Divuw,
     Remw,
     Remuw,
+    LrW,
+    ScW,
+    AmoSwapW,
+    AmoAddW,
+    AmoXorW,
+    AmoAndW,
+    AmoOrW,
+    AmoMinW,
+    AmoMaxW,
+    AmoMinuW,
+    AmoMaxuW,
+    LrD,
+    ScD,
+    AmoSwapD,
+    AmoAddD,
+    AmoXorD,
+    AmoAndD,
+    AmoOrD,
+    AmoMinD,
+    AmoMaxD,
+    AmoMinuD,
+    AmoMaxuD,
     Fence,
     FenceI,
     Ecall,
@@ -81,6 +103,8 @@ struct DecodedInstruction {
     std::uint8_t rs1{};
     std::uint8_t rs2{};
     std::uint64_t immediate{};
+    bool acquire{};
+    bool release{};
 
     [[nodiscard]] constexpr bool valid() const noexcept
     {

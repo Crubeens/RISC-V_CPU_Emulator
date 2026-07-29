@@ -87,6 +87,47 @@ namespace {
     };
 }
 
+[[nodiscard]] constexpr InstructionKind atomic_kind(
+    std::uint32_t funct5,
+    bool doubleword) noexcept
+{
+    switch (funct5) {
+    case 0x02U:
+        return doubleword ? InstructionKind::LrD : InstructionKind::LrW;
+    case 0x03U:
+        return doubleword ? InstructionKind::ScD : InstructionKind::ScW;
+    case 0x01U:
+        return doubleword ? InstructionKind::AmoSwapD
+                          : InstructionKind::AmoSwapW;
+    case 0x00U:
+        return doubleword ? InstructionKind::AmoAddD
+                          : InstructionKind::AmoAddW;
+    case 0x04U:
+        return doubleword ? InstructionKind::AmoXorD
+                          : InstructionKind::AmoXorW;
+    case 0x0CU:
+        return doubleword ? InstructionKind::AmoAndD
+                          : InstructionKind::AmoAndW;
+    case 0x08U:
+        return doubleword ? InstructionKind::AmoOrD
+                          : InstructionKind::AmoOrW;
+    case 0x10U:
+        return doubleword ? InstructionKind::AmoMinD
+                          : InstructionKind::AmoMinW;
+    case 0x14U:
+        return doubleword ? InstructionKind::AmoMaxD
+                          : InstructionKind::AmoMaxW;
+    case 0x18U:
+        return doubleword ? InstructionKind::AmoMinuD
+                          : InstructionKind::AmoMinuW;
+    case 0x1CU:
+        return doubleword ? InstructionKind::AmoMaxuD
+                          : InstructionKind::AmoMaxuW;
+    default:
+        return InstructionKind::Illegal;
+    }
+}
+
 } // namespace
 
 DecodedInstruction decode_instruction(
@@ -352,6 +393,23 @@ DecodedInstruction decode_instruction(
             }
         }
         return make(instruction, kind);
+    }
+    case 0x2FU: {
+        if (funct3 != 2U && funct3 != 3U) {
+            return make(instruction, InstructionKind::Illegal);
+        }
+        const bool doubleword = funct3 == 3U;
+        const std::uint32_t funct5 = bits(instruction, 31U, 27U);
+        const InstructionKind kind = atomic_kind(funct5, doubleword);
+        if ((kind == InstructionKind::LrW ||
+             kind == InstructionKind::LrD) &&
+            bits(instruction, 24U, 20U) != 0U) {
+            return make(instruction, InstructionKind::Illegal);
+        }
+        DecodedInstruction decoded = make(instruction, kind);
+        decoded.acquire = bits(instruction, 26U, 26U) != 0U;
+        decoded.release = bits(instruction, 25U, 25U) != 0U;
+        return decoded;
     }
     case 0x0FU:
         if (funct3 == 0U) {
