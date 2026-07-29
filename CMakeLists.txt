@@ -4,7 +4,7 @@ project(
     riscv_cpu_emulator
     VERSION 0.1.0
     DESCRIPTION "Modular RV32/RV64 system emulator"
-    LANGUAGES CXX)
+    LANGUAGES C CXX)
 
 option(RV_BUILD_TESTS "Build framework tests" ON)
 option(
@@ -140,6 +140,7 @@ add_library(
     core64/src/core.cpp
     core64/src/csr.cpp
     core64/src/decode.cpp
+    core64/src/floating.cpp
     core64/src/interrupt.cpp
     core64/src/mmu.cpp
     core64/src/trap.cpp)
@@ -149,7 +150,151 @@ target_include_directories(
     PUBLIC
         ${PROJECT_SOURCE_DIR}/core64/include)
 
-target_link_libraries(rv64_core PUBLIC rv_common)
+include(FetchContent)
+FetchContent_Declare(
+    berkeley_softfloat
+    GIT_REPOSITORY
+        https://github.com/ucb-bar/berkeley-softfloat-3.git
+    GIT_TAG
+        a0c6494cdc11865811dec815d5c0049fba9d82a8
+    GIT_SHALLOW
+        FALSE)
+FetchContent_MakeAvailable(berkeley_softfloat)
+
+set(RV_SOFTFLOAT_SOURCE_DIR "${berkeley_softfloat_SOURCE_DIR}/source")
+set(
+    RV_SOFTFLOAT_SOURCE_NAMES
+    s_eq128
+    s_le128
+    s_lt128
+    s_shortShiftLeft128
+    s_shortShiftRight128
+    s_shortShiftRightJam64
+    s_shortShiftRightJam64Extra
+    s_shortShiftRightJam128
+    s_shortShiftRightJam128Extra
+    s_shiftRightJam32
+    s_shiftRightJam64
+    s_shiftRightJam64Extra
+    s_shiftRightJam128
+    s_shiftRightJam128Extra
+    s_countLeadingZeros8
+    s_countLeadingZeros16
+    s_countLeadingZeros32
+    s_countLeadingZeros64
+    s_add128
+    s_sub128
+    s_mul64ByShifted32To128
+    s_mul64To128
+    s_approxRecip_1Ks
+    s_approxRecip32_1
+    s_approxRecipSqrt_1Ks
+    s_approxRecipSqrt32_1
+    s_roundToUI32
+    s_roundToUI64
+    s_roundToI32
+    s_roundToI64
+    s_normSubnormalF32Sig
+    s_roundPackToF32
+    s_normRoundPackToF32
+    s_addMagsF32
+    s_subMagsF32
+    s_mulAddF32
+    s_normSubnormalF64Sig
+    s_roundPackToF64
+    s_normRoundPackToF64
+    s_addMagsF64
+    s_subMagsF64
+    s_mulAddF64
+    softfloat_state
+    ui32_to_f32
+    ui32_to_f64
+    ui64_to_f32
+    ui64_to_f64
+    i32_to_f32
+    i32_to_f64
+    i64_to_f32
+    i64_to_f64
+    f32_to_ui32
+    f32_to_ui64
+    f32_to_i32
+    f32_to_i64
+    f32_to_f64
+    f32_add
+    f32_sub
+    f32_mul
+    f32_mulAdd
+    f32_div
+    f32_sqrt
+    f32_eq
+    f32_le
+    f32_lt
+    f32_eq_signaling
+    f32_le_quiet
+    f32_lt_quiet
+    f32_isSignalingNaN
+    f64_to_ui32
+    f64_to_ui64
+    f64_to_i32
+    f64_to_i64
+    f64_to_f32
+    f64_add
+    f64_sub
+    f64_mul
+    f64_mulAdd
+    f64_div
+    f64_sqrt
+    f64_eq
+    f64_le
+    f64_lt
+    f64_eq_signaling
+    f64_le_quiet
+    f64_lt_quiet
+    f64_isSignalingNaN)
+
+set(RV_SOFTFLOAT_SOURCES)
+foreach(source_name IN LISTS RV_SOFTFLOAT_SOURCE_NAMES)
+    list(
+        APPEND
+        RV_SOFTFLOAT_SOURCES
+        "${RV_SOFTFLOAT_SOURCE_DIR}/${source_name}.c")
+endforeach()
+list(
+    APPEND
+    RV_SOFTFLOAT_SOURCES
+    "${RV_SOFTFLOAT_SOURCE_DIR}/RISCV/softfloat_raiseFlags.c"
+    "${RV_SOFTFLOAT_SOURCE_DIR}/RISCV/s_f32UIToCommonNaN.c"
+    "${RV_SOFTFLOAT_SOURCE_DIR}/RISCV/s_commonNaNToF32UI.c"
+    "${RV_SOFTFLOAT_SOURCE_DIR}/RISCV/s_propagateNaNF32UI.c"
+    "${RV_SOFTFLOAT_SOURCE_DIR}/RISCV/s_f64UIToCommonNaN.c"
+    "${RV_SOFTFLOAT_SOURCE_DIR}/RISCV/s_commonNaNToF64UI.c"
+    "${RV_SOFTFLOAT_SOURCE_DIR}/RISCV/s_propagateNaNF64UI.c")
+
+add_library(rv_softfloat STATIC ${RV_SOFTFLOAT_SOURCES})
+set_target_properties(
+    rv_softfloat
+    PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF)
+target_include_directories(
+    rv_softfloat
+    PUBLIC
+        "${berkeley_softfloat_SOURCE_DIR}/source/include"
+    PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/softfloat"
+        "${berkeley_softfloat_SOURCE_DIR}/source/RISCV")
+target_compile_definitions(
+    rv_softfloat
+    PRIVATE
+        SOFTFLOAT_FAST_INT64
+        SOFTFLOAT_ROUND_ODD
+        INLINE_LEVEL=5
+        SOFTFLOAT_FAST_DIV32TO16
+        SOFTFLOAT_FAST_DIV64TO32
+        THREAD_LOCAL=_Thread_local)
+
+target_link_libraries(rv64_core PUBLIC rv_common PRIVATE rv_softfloat)
 rv_enable_warnings(rv64_core)
 
 add_library(
@@ -458,6 +603,21 @@ if(RV_BUILD_TESTS)
     add_test(
         NAME rv64_floating_state_tests
         COMMAND rv64_floating_state_tests)
+
+    add_executable(
+        rv64_floating_arithmetic_tests
+        tests/rv64_floating_arithmetic_tests.cpp)
+
+    target_link_libraries(
+        rv64_floating_arithmetic_tests
+        PRIVATE
+            rv64_core)
+
+    rv_enable_warnings(rv64_floating_arithmetic_tests)
+
+    add_test(
+        NAME rv64_floating_arithmetic_tests
+        COMMAND rv64_floating_arithmetic_tests)
 
     add_executable(
         rv64_privileged_tests

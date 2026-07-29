@@ -332,6 +332,10 @@ Linux Image 默认放置在 `0x80400000`，满足 RV32 内核 4 MiB 对齐要求
 
 外设行为参考 `bane9/rv64gc-emu`，其 LICENSE 为 MIT。项目只吸收设备模型思想和必要实现，不引入其 CPU、CSR、MMU 或指令执行代码。
 
+RV64F/RV64D 的位级算术使用固定提交的 Berkeley SoftFloat Release 3e
+RISC-V specialization；版本、来源和 BSD-3-Clause 文本记录在
+`THIRD_PARTY_NOTICES.md`，不使用宿主机原生浮点结果替代客户机语义。
+
 所有吸收或改写的第三方实现必须：
 
 - 在 `THIRD_PARTY_NOTICES.md` 中记录来源。

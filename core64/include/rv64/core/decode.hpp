@@ -98,6 +98,24 @@ enum class InstructionKind : std::uint8_t {
     FmvWX,
     FmvXD,
     FmvDX,
+    FaddS,
+    FsubS,
+    FmulS,
+    FdivS,
+    FsqrtS,
+    FmaddS,
+    FmsubS,
+    FnmsubS,
+    FnmaddS,
+    FaddD,
+    FsubD,
+    FmulD,
+    FdivD,
+    FsqrtD,
+    FmaddD,
+    FmsubD,
+    FnmsubD,
+    FnmaddD,
     Fence,
     FenceI,
     Csrrw,
@@ -120,6 +138,8 @@ struct DecodedInstruction {
     std::uint8_t rd{};
     std::uint8_t rs1{};
     std::uint8_t rs2{};
+    std::uint8_t rs3{};
+    std::uint8_t rounding_mode{};
     std::uint64_t immediate{};
     bool acquire{};
     bool release{};

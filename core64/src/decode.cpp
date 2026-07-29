@@ -101,6 +101,30 @@ namespace {
     return decoded;
 }
 
+[[nodiscard]] constexpr bool valid_rounding_mode(
+    std::uint32_t rounding_mode) noexcept
+{
+    return rounding_mode <= 4U || rounding_mode == 7U;
+}
+
+[[nodiscard]] constexpr DecodedInstruction make_floating(
+    std::uint32_t instruction,
+    InstructionKind kind,
+    bool fused = false) noexcept
+{
+    DecodedInstruction decoded = make(instruction, kind);
+    decoded.rounding_mode = static_cast<std::uint8_t>(
+        bits(instruction, 14U, 12U));
+    if (fused) {
+        decoded.rs3 = static_cast<std::uint8_t>(
+            bits(instruction, 31U, 27U));
+    }
+    if (!valid_rounding_mode(decoded.rounding_mode)) {
+        decoded.kind = InstructionKind::Illegal;
+    }
+    return decoded;
+}
+
 [[nodiscard]] constexpr InstructionKind atomic_kind(
     std::uint32_t funct5,
     bool doubleword) noexcept
@@ -478,7 +502,64 @@ DecodedInstruction decode_instruction(
         decoded.release = bits(instruction, 25U, 25U) != 0U;
         return decoded;
     }
+    case 0x43U:
+    case 0x47U:
+    case 0x4BU:
+    case 0x4FU: {
+        const std::uint32_t format = bits(instruction, 26U, 25U);
+        if (format > 1U) {
+            return make(instruction, InstructionKind::Illegal);
+        }
+        const bool double_precision = format == 1U;
+        InstructionKind kind = InstructionKind::Illegal;
+        if (opcode == 0x43U) {
+            kind = double_precision ? InstructionKind::FmaddD
+                                    : InstructionKind::FmaddS;
+        } else if (opcode == 0x47U) {
+            kind = double_precision ? InstructionKind::FmsubD
+                                    : InstructionKind::FmsubS;
+        } else if (opcode == 0x4BU) {
+            kind = double_precision ? InstructionKind::FnmsubD
+                                    : InstructionKind::FnmsubS;
+        } else {
+            kind = double_precision ? InstructionKind::FnmaddD
+                                    : InstructionKind::FnmaddS;
+        }
+        return make_floating(instruction, kind, true);
+    }
     case 0x53U:
+        switch (funct7) {
+        case 0x00U:
+            return make_floating(instruction, InstructionKind::FaddS);
+        case 0x01U:
+            return make_floating(instruction, InstructionKind::FaddD);
+        case 0x04U:
+            return make_floating(instruction, InstructionKind::FsubS);
+        case 0x05U:
+            return make_floating(instruction, InstructionKind::FsubD);
+        case 0x08U:
+            return make_floating(instruction, InstructionKind::FmulS);
+        case 0x09U:
+            return make_floating(instruction, InstructionKind::FmulD);
+        case 0x0CU:
+            return make_floating(instruction, InstructionKind::FdivS);
+        case 0x0DU:
+            return make_floating(instruction, InstructionKind::FdivD);
+        case 0x2CU:
+            return bits(instruction, 24U, 20U) == 0U
+                       ? make_floating(
+                             instruction,
+                             InstructionKind::FsqrtS)
+                       : make(instruction, InstructionKind::Illegal);
+        case 0x2DU:
+            return bits(instruction, 24U, 20U) == 0U
+                       ? make_floating(
+                             instruction,
+                             InstructionKind::FsqrtD)
+                       : make(instruction, InstructionKind::Illegal);
+        default:
+            break;
+        }
         switch (instruction & 0xFFF0707FU) {
         case 0xE0000053U:
             return make(instruction, InstructionKind::FmvXW);

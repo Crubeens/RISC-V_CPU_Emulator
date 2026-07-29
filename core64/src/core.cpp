@@ -9,6 +9,7 @@
 
 #include "rv64/core/csr.hpp"
 #include "rv64/core/decode.hpp"
+#include "rv64/core/floating.hpp"
 #include "rv64/core/interrupt.hpp"
 #include "rv64/core/mmu.hpp"
 #include "rv64/core/trap.hpp"
@@ -292,6 +293,7 @@ StepResult Core::step(const IrqLines& irq_lines)
     std::uint64_t next_pc = pc + decoded.length;
     std::optional<std::uint64_t> register_value;
     std::optional<std::uint64_t> floating_register_value;
+    std::uint8_t floating_exception_flags = 0;
     std::optional<std::pair<CsrAddress, Xlen>> csr_write;
     std::optional<CpuSnapshot> privileged_state;
     bool wait_for_interrupt = false;
@@ -958,6 +960,103 @@ StepResult Core::step(const IrqLines& irq_lines)
             floating_register_value = rs1;
         }
         break;
+    case InstructionKind::FaddS:
+    case InstructionKind::FsubS:
+    case InstructionKind::FmulS:
+    case InstructionKind::FdivS:
+    case InstructionKind::FsqrtS:
+    case InstructionKind::FmaddS:
+    case InstructionKind::FmsubS:
+    case InstructionKind::FnmsubS:
+    case InstructionKind::FnmaddS:
+    case InstructionKind::FaddD:
+    case InstructionKind::FsubD:
+    case InstructionKind::FmulD:
+    case InstructionKind::FdivD:
+    case InstructionKind::FsqrtD:
+    case InstructionKind::FmaddD:
+    case InstructionKind::FmsubD:
+    case InstructionKind::FnmsubD:
+    case InstructionKind::FnmaddD: {
+        if (!floating_point_enabled(state_)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+        std::uint8_t rounding_mode = 0;
+        if (!resolve_rounding_mode(
+                decoded.rounding_mode,
+                state_.floating_point.fcsr,
+                rounding_mode)) {
+            return trap(
+                ExceptionCause::IllegalInstruction,
+                instruction,
+                instruction);
+        }
+
+        const bool double_precision =
+            decoded.kind == InstructionKind::FaddD ||
+            decoded.kind == InstructionKind::FsubD ||
+            decoded.kind == InstructionKind::FmulD ||
+            decoded.kind == InstructionKind::FdivD ||
+            decoded.kind == InstructionKind::FsqrtD ||
+            decoded.kind == InstructionKind::FmaddD ||
+            decoded.kind == InstructionKind::FmsubD ||
+            decoded.kind == InstructionKind::FnmsubD ||
+            decoded.kind == InstructionKind::FnmaddD;
+        FloatingArithmeticOperation operation =
+            FloatingArithmeticOperation::Add;
+        switch (decoded.kind) {
+        case InstructionKind::FsubS:
+        case InstructionKind::FsubD:
+            operation = FloatingArithmeticOperation::Subtract;
+            break;
+        case InstructionKind::FmulS:
+        case InstructionKind::FmulD:
+            operation = FloatingArithmeticOperation::Multiply;
+            break;
+        case InstructionKind::FdivS:
+        case InstructionKind::FdivD:
+            operation = FloatingArithmeticOperation::Divide;
+            break;
+        case InstructionKind::FsqrtS:
+        case InstructionKind::FsqrtD:
+            operation = FloatingArithmeticOperation::SquareRoot;
+            break;
+        case InstructionKind::FmaddS:
+        case InstructionKind::FmaddD:
+            operation = FloatingArithmeticOperation::MultiplyAdd;
+            break;
+        case InstructionKind::FmsubS:
+        case InstructionKind::FmsubD:
+            operation = FloatingArithmeticOperation::MultiplySubtract;
+            break;
+        case InstructionKind::FnmsubS:
+        case InstructionKind::FnmsubD:
+            operation = FloatingArithmeticOperation::NegatedMultiplyAdd;
+            break;
+        case InstructionKind::FnmaddS:
+        case InstructionKind::FnmaddD:
+            operation =
+                FloatingArithmeticOperation::NegatedMultiplySubtract;
+            break;
+        default:
+            break;
+        }
+
+        const FloatingResult result = floating_arithmetic(
+            double_precision ? FloatingFormat::Double
+                             : FloatingFormat::Single,
+            operation,
+            rounding_mode,
+            state_.floating_point.registers[decoded.rs1],
+            state_.floating_point.registers[decoded.rs2],
+            state_.floating_point.registers[decoded.rs3]);
+        floating_register_value = result.value;
+        floating_exception_flags = result.exception_flags;
+        break;
+    }
     case InstructionKind::Fence:
         break;
     case InstructionKind::FenceI:
@@ -1120,6 +1219,9 @@ StepResult Core::step(const IrqLines& irq_lines)
     if (floating_register_value.has_value()) {
         state_.floating_point.registers[decoded.rd] =
             *floating_register_value;
+        state_.floating_point.fcsr = static_cast<std::uint8_t>(
+            state_.floating_point.fcsr |
+            floating_exception_flags);
         mark_floating_point_dirty(state_);
         floating_register_write = {
             .enabled = true,

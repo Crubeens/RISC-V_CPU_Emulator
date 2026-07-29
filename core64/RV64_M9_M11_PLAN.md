@@ -55,7 +55,7 @@
 
 ## RV64-M10：完整 RV64F/RV64D
 
-状态：进行中；M10.1 已完成，当前下一阶段为 M10.2。
+状态：进行中；M10.1、M10.2 已完成，当前下一阶段为 M10.3。
 
 ### M10.1：状态、CSR、访存、移动和压缩访存
 
@@ -86,6 +86,8 @@
 
 ### M10.2：算术、融合运算与舍入
 
+状态：已完成（2026-07-29）。
+
 - 实现 F/D 的加、减、乘、除、平方根和 fused multiply-add 指令族。
 - 支持 RNE、RTZ、RDN、RUP、RMM 和动态舍入模式。
 - 正确累计 NV、DZ、OF、UF、NX。
@@ -96,6 +98,19 @@
 
 - 每种舍入模式、异常标志和特殊值均有边界测试。
 - 结果位模式和 `fflags` 与 Spike/官方浮点测试一致。
+
+验收记录：
+
+- 已实现 `FADD/FSUB/FMUL/FDIV/FSQRT` 以及
+  `FMADD/FMSUB/FNMSUB/FNMADD` 的 S/D 形式。
+- RNE、RTZ、RDN、RUP、RMM 与动态 `frm` 均由位级确定性后端执行；
+  保留模式会精确产生非法指令。
+- NV、DZ、OF、UF、NX 直接按 RISC-V 位布局累积到 `fflags`，覆盖
+  signaling NaN、除零、溢出、下溢、非精确结果和无效 NaN-box。
+- 使用 Berkeley SoftFloat Release 3e 的 RISC-V specialization，固定到
+  `a0c6494cdc11865811dec815d5c0049fba9d82a8`，不依赖宿主 FPU 或宿主舍入环境。
+- Debug 与 Release 均为 107/107 通过，包含 RV32 全量回归。
+- M10 完成前继续保持 `misa`、DTS 和启动软件的 RV64IMAC 宣告。
 
 ### M10.3：比较、分类、符号与转换
 
