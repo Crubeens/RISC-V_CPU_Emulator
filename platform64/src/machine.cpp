@@ -2,11 +2,13 @@
 
 #include "rv/devices/clint.hpp"
 #include "rv/devices/framebuffer.hpp"
+#include "rv/devices/goldfish_rtc.hpp"
 #include "rv/devices/plic.hpp"
 #include "rv/devices/ram.hpp"
 #include "rv/devices/syscon.hpp"
 #include "rv/devices/uart16550.hpp"
 #include "rv/devices/virtio_block.hpp"
+#include "rv/devices/virtio_net.hpp"
 
 namespace rv64::platform {
 
@@ -19,6 +21,9 @@ Machine::Machine(const MachineConfig& config)
     clint_ = &bus_.emplace_device<rv::devices::Clint>(
         address_map::clint_base,
         address_map::clint_size);
+    rtc_ = &bus_.emplace_device<rv::devices::GoldfishRtc>(
+        address_map::rtc_base,
+        address_map::rtc_size);
     plic_ = &bus_.emplace_device<rv::devices::Plic>(
         address_map::plic_base,
         address_map::plic_size);
@@ -30,6 +35,10 @@ Machine::Machine(const MachineConfig& config)
             address_map::virtio_block_base,
             address_map::virtio_block_size,
             config.virtual_disk_size);
+    virtio_net_ =
+        &bus_.emplace_device<rv::devices::VirtioNet>(
+            address_map::virtio_net_base,
+            address_map::virtio_net_size);
     syscon_ = &bus_.emplace_device<rv::devices::Syscon>(
         address_map::syscon_base,
         address_map::syscon_size);
@@ -141,6 +150,12 @@ StepResult Machine::step(std::uint64_t elapsed_cycles)
         address_map::virtio_block_irq,
         virtio_block_->interrupt_pending());
     plic_->set_source_level(
+        address_map::virtio_net_irq,
+        virtio_net_->interrupt_pending());
+    plic_->set_source_level(
+        address_map::rtc_irq,
+        rtc_->interrupt_pending());
+    plic_->set_source_level(
         address_map::uart_irq,
         uart_->interrupt_pending());
     irq_lines_ = {
@@ -184,6 +199,11 @@ rv::devices::Clint& Machine::clint() noexcept
     return *clint_;
 }
 
+rv::devices::GoldfishRtc& Machine::rtc() noexcept
+{
+    return *rtc_;
+}
+
 rv::devices::Plic& Machine::plic() noexcept
 {
     return *plic_;
@@ -197,6 +217,11 @@ rv::devices::Uart16550& Machine::uart() noexcept
 rv::devices::VirtioBlock& Machine::virtio_block() noexcept
 {
     return *virtio_block_;
+}
+
+rv::devices::VirtioNet& Machine::virtio_net() noexcept
+{
+    return *virtio_net_;
 }
 
 rv::devices::Syscon& Machine::syscon() noexcept

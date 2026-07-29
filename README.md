@@ -9,8 +9,9 @@
 - RV32：M9 基线，支持 RV32IMAC、M/S/U、Sv32、OpenSBI、Linux、
   Buildroot ext4 根文件系统和 SDL 图形界面。
 - RV64：M8 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
-  LP64 Buildroot ext4、SDL、独立性能统计以及参考/快速执行模式。
-- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 102。
+  LP64 Buildroot ext4、SDL、独立性能统计、参考/快速执行模式，以及
+  RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS 和 Goldfish RTC。
+- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 105。
 
 ## 架构边界
 
@@ -19,7 +20,7 @@
 | `core32/` | 独立 RV32IMAC CPU、CSR、Trap、中断、Sv32 和 TLB |
 | `core64/` | 独立 RV64IMAC CPU、CSR、Trap、中断、Sv39 和 TLB |
 | `common/` | 与 XLEN 无关的总线接口、物理地址和系统总线 |
-| `devices/` | RAM、CLINT、PLIC、UART、VirtIO Block、Framebuffer、Syscon |
+| `devices/` | RAM、CLINT、PLIC、UART、VirtIO Block/Net、Goldfish RTC、Framebuffer、Syscon |
 | `platform32/` | RV32 地址布局、设备树、启动装载和 Machine |
 | `platform64/` | RV64 地址布局、设备树、启动装载和 Machine |
 | `app/` | 统一命令行入口、终端和 SDL 前端 |
@@ -38,6 +39,9 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 - Sv32 与 Sv39、页权限、A/D 位、ASID、TLB 和 `SFENCE.VMA`。
 - OpenSBI 固件、Linux 内核和 DTB 的固定启动布局。
 - Legacy VirtIO MMIO Block 和可回写的 ext4 虚拟磁盘。
+- 架构无关的 VirtIO MMIO Net；当前只由 RV64 平台装配。
+- RV64 libslirp 用户态 NAT、DHCP、DNS 和无需管理员权限的宿主网络。
+- RV64 Goldfish RTC，以宿主实时时间初始化客户机。
 - NS16550A UART、CLINT、PLIC、Syscon 和 640×480 XRGB8888 Framebuffer。
 - SDL2 窗口、UART 终端、Framebuffer 显示和键盘输入。
 - RV32 官方 `riscv-tests` I/M/A/C 用例及 Spike Commit Trace 差分。
@@ -45,9 +49,15 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 
 ## 构建和测试
 
-Windows 构建需要 CMake、Ninja、Clang、DTC、SDL2，以及用于 RV32
+Windows 构建需要 CMake、Ninja、Clang、DTC、SDL2、libslirp，以及用于 RV32
 自动裸机/架构测试的 `riscv32-unknown-elf-gcc` 和 `objcopy`。
 默认从 MSYS2 UCRT64 的 `C:\msys64\ucrt64` 查找宿主依赖。
+
+libslirp 可在 MSYS2 UCRT64 中安装：
+
+```bash
+pacman -S mingw-w64-ucrt-x86_64-libslirp
+```
 
 ```powershell
 cmake --preset debug
@@ -106,6 +116,15 @@ RV64 Linux：
   .\boot-images\rootfs-buildroot-v2025.02.16-rv64imac.ext4
 ```
 
+该命令默认启用用户态网络。已验证 Buildroot 可通过 DHCP 获得
+`10.0.2.15`，网关为 `10.0.2.2`，DNS 为 `10.0.2.3`。
+
+Debian 13 riscv64 APT 镜像可由
+[`scripts/build_debian_rv64_rootfs.sh`](scripts/build_debian_rv64_rootfs.sh)
+生成。Debian 官方用户态使用 RV64GC/LP64D；当前网络阶段已完成，但必须先按
+[`core64/RV64FD_APT_PLAN.md`](core64/RV64FD_APT_PLAN.md) 完成 RV64F/D，
+才能运行 Debian PID 1 和最终验收 `apt`。
+
 在 `--boot-disk` 前增加 `--gui` 可启用 SDL 窗口，例如：
 
 ```powershell
@@ -131,6 +150,8 @@ RV64 Linux：
 
 - RV32 固定计划：[PROJECT_PLAN.md](PROJECT_PLAN.md)
 - RV64 固定计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
+- RV64 网络与 APT：[docs/RV64网络与APT计划.md](docs/RV64网络与APT计划.md)
+- RV64F/D APT 前置阶段：[core64/RV64FD_APT_PLAN.md](core64/RV64FD_APT_PLAN.md)
 
 RV64-M1 至 M8 已完成。后续新增能力应作为新的阶段计划提出，不再改写
 既有 M1–M8 验收边界。

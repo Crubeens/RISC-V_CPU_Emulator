@@ -28,7 +28,12 @@
 #include "rv/devices/syscon.hpp"
 #include "rv/devices/uart16550.hpp"
 #include "rv/devices/virtio_block.hpp"
+#include "rv/devices/virtio_net.hpp"
 #include "rv64/platform/machine.hpp"
+
+#if defined(RV_ENABLE_NETWORK)
+#include "rv/app/slirp_network_backend.hpp"
+#endif
 
 #if defined(RV_ENABLE_SDL)
 #include "rv/app/sdl_frontend.hpp"
@@ -503,7 +508,20 @@ int run_boot(
             static_cast<std::uint64_t>(virtual_disk.size());
     }
 
+#if defined(RV_ENABLE_NETWORK)
+    rv::app::SlirpNetworkBackend network_backend;
+    if (!network_backend.ready()) {
+        std::cerr
+            << "Cannot start RV64 user-mode network: "
+            << network_backend.error() << '\n';
+        return 9;
+    }
+#endif
+
     platform::Machine machine(machine_config);
+#if defined(RV_ENABLE_NETWORK)
+    machine.virtio_net().set_backend(&network_backend);
+#endif
     if (use_virtual_disk &&
         !load_disk_image(machine, virtual_disk)) {
         return 3;
@@ -546,6 +564,12 @@ int run_boot(
             << " (" << virtual_disk.size()
             << " bytes, read-write)\n";
     }
+#if defined(RV_ENABLE_NETWORK)
+    std::cout
+        << "RV64 user-mode network enabled: VirtIO net, "
+        << "libslirp " << network_backend.version()
+        << ", DHCP/DNS gateway 10.0.2.2.\n";
+#endif
     std::cout << "Starting RV64 guest; machine-step limit: ";
     if (step_limit == unlimited_step_limit) {
         std::cout << "unlimited\n";
@@ -561,6 +585,28 @@ int run_boot(
             print_performance_diagnostics(
                 machine,
                 std::chrono::steady_clock::now() - boot_started);
+#if defined(RV_ENABLE_NETWORK)
+            const auto& device =
+                machine.virtio_net().statistics();
+            const auto& host = network_backend.statistics();
+            std::cout
+                << "RV64 network statistics:\n"
+                << "  VirtIO TX=" << device.transmitted_frames
+                << " frames/" << device.transmitted_bytes
+                << " bytes, RX=" << device.received_frames
+                << " frames/" << device.received_bytes
+                << " bytes, drops="
+                << device.dropped_transmit_frames +
+                       device.dropped_receive_frames
+                << '\n'
+                << "  libslirp guest-to-host="
+                << host.guest_to_host_frames
+                << ", host-to-guest="
+                << host.host_to_guest_frames
+                << ", polls=" << host.poll_calls
+                << ", errors=" << host.guest_errors
+                << '\n';
+#endif
             return write_back_disk(machine, virtual_disk_path)
                        ? result
                        : 7;

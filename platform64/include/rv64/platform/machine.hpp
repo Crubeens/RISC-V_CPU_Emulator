@@ -11,11 +11,13 @@
 namespace rv::devices {
 class Clint;
 class Framebuffer;
+class GoldfishRtc;
 class Plic;
 class Ram;
 class Syscon;
 class Uart16550;
 class VirtioBlock;
+class VirtioNet;
 } // namespace rv::devices
 
 namespace rv64::platform {
@@ -54,9 +56,11 @@ class Machine {
 
     [[nodiscard]] rv::devices::Ram& ram() noexcept;
     [[nodiscard]] rv::devices::Clint& clint() noexcept;
+    [[nodiscard]] rv::devices::GoldfishRtc& rtc() noexcept;
     [[nodiscard]] rv::devices::Plic& plic() noexcept;
     [[nodiscard]] rv::devices::Uart16550& uart() noexcept;
     [[nodiscard]] rv::devices::VirtioBlock& virtio_block() noexcept;
+    [[nodiscard]] rv::devices::VirtioNet& virtio_net() noexcept;
     [[nodiscard]] rv::devices::Syscon& syscon() noexcept;
     [[nodiscard]] rv::devices::Framebuffer* framebuffer() noexcept;
     [[nodiscard]] const IrqLines& irq_lines() const noexcept;
@@ -67,9 +71,11 @@ class Machine {
 
     rv::devices::Ram* ram_{};
     rv::devices::Clint* clint_{};
+    rv::devices::GoldfishRtc* rtc_{};
     rv::devices::Plic* plic_{};
     rv::devices::Uart16550* uart_{};
     rv::devices::VirtioBlock* virtio_block_{};
+    rv::devices::VirtioNet* virtio_net_{};
     rv::devices::Syscon* syscon_{};
     rv::devices::Framebuffer* framebuffer_{};
     IrqLines irq_lines_{};

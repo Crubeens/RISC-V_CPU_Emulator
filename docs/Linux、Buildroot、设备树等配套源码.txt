@@ -47,5 +47,17 @@ Buildroot 使用 musl、BusyBox 和 128 MiB ext4 根文件系统。
 - boot-images/ 被 Git 忽略并作为持久外部产物保存；build/ 是可随时重建
   的 CMake 输出目录。
 
+五、Debian 13 riscv64 APT 镜像
+
+- 生成脚本：scripts/build_debian_rv64_rootfs.sh
+- 输出镜像：boot-images/debian-13-riscv64-apt.ext4（768 MiB）
+- 软件源：Debian 13 trixie 官方 riscv64 仓库
+- 网络：RV64 VirtIO Net + libslirp DHCP/DNS/NAT
+- 时间：Goldfish RTC，使用宿主实时时间
+
+Debian 官方 riscv64 使用 RV64GC/LP64D。镜像、网络、RTC 已准备完成，
+但当前 RV64IMAC CPU 会在动态加载器的 C.FSD 指令处产生非法指令。
+必须完成 core64/RV64FD_APT_PLAN.md 后才能进行 apt 最终验收。
+
 历史参考软件仓库：
 https://github.com/bane9/rv64gc-emu-software

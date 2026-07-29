@@ -15,6 +15,10 @@ option(
     RV_ENABLE_SDL
     "Build the M7 SDL graphical frontend"
     ON)
+option(
+    RV_ENABLE_NETWORK
+    "Build the RV64 libslirp user-mode network backend"
+    ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -153,11 +157,13 @@ add_library(
     common/src/system_bus.cpp
     devices/src/clint.cpp
     devices/src/framebuffer.cpp
+    devices/src/goldfish_rtc.cpp
     devices/src/plic.cpp
     devices/src/ram.cpp
     devices/src/syscon.cpp
     devices/src/uart16550.cpp
-    devices/src/virtio_block.cpp)
+    devices/src/virtio_block.cpp
+    devices/src/virtio_net.cpp)
 
 target_include_directories(
     rv_system
@@ -212,6 +218,54 @@ target_include_directories(
 
 target_link_libraries(rv64_app PUBLIC rv64_platform)
 rv_enable_warnings(rv64_app)
+
+if(RV_ENABLE_NETWORK)
+    find_path(
+        RV_SLIRP_INCLUDE_DIR
+        NAMES slirp/libslirp.h
+        HINTS
+            "C:/msys64/ucrt64/include")
+    find_library(
+        RV_SLIRP_LIBRARY
+        NAMES slirp
+        HINTS
+            "C:/msys64/ucrt64/lib")
+    if(NOT RV_SLIRP_INCLUDE_DIR OR NOT RV_SLIRP_LIBRARY)
+        message(
+            FATAL_ERROR
+            "RV64 networking requires the libslirp development library")
+    endif()
+
+    add_library(
+        rv_host_network
+        app/src/slirp_network_backend.cpp)
+
+    target_include_directories(
+        rv_host_network
+        PUBLIC
+            ${PROJECT_SOURCE_DIR}/app/include
+        PRIVATE
+            ${RV_SLIRP_INCLUDE_DIR})
+    target_link_libraries(
+        rv_host_network
+        PUBLIC
+            rv_system
+        PRIVATE
+            ${RV_SLIRP_LIBRARY})
+    if(WIN32)
+        target_link_libraries(rv_host_network PRIVATE ws2_32)
+    endif()
+    rv_enable_warnings(rv_host_network)
+
+    target_compile_definitions(
+        rv64_app
+        PRIVATE
+            RV_ENABLE_NETWORK=1)
+    target_link_libraries(
+        rv64_app
+        PRIVATE
+            rv_host_network)
+endif()
 
 if(RV_ENABLE_SDL)
     find_path(
@@ -300,6 +354,31 @@ if(WIN32 AND RV_ENABLE_SDL)
             "${RV_SDL2_RUNTIME}"
             "$<TARGET_FILE_DIR:riscv_emulator>"
         VERBATIM)
+endif()
+
+if(WIN32 AND RV_ENABLE_NETWORK)
+    set(RV_NETWORK_RUNTIME_DIR "C:/msys64/ucrt64/bin")
+    foreach(
+        runtime_name
+        libslirp-0.dll
+        libglib-2.0-0.dll
+        libintl-8.dll
+        libiconv-2.dll
+        libpcre2-8-0.dll)
+        if(NOT EXISTS "${RV_NETWORK_RUNTIME_DIR}/${runtime_name}")
+            message(
+                FATAL_ERROR
+                "RV64 networking requires ${runtime_name} at runtime")
+        endif()
+        add_custom_command(
+            TARGET riscv_emulator
+            POST_BUILD
+            COMMAND
+                ${CMAKE_COMMAND} -E copy_if_different
+                "${RV_NETWORK_RUNTIME_DIR}/${runtime_name}"
+                "$<TARGET_FILE_DIR:riscv_emulator>"
+            VERBATIM)
+    endforeach()
 endif()
 
 if(RV_BUILD_TESTS)
@@ -439,6 +518,53 @@ if(RV_BUILD_TESTS)
     add_test(
         NAME rv64_platform_tests
         COMMAND rv64_platform_tests)
+
+    add_executable(
+        virtio_net_tests
+        tests/virtio_net_tests.cpp)
+
+    target_link_libraries(
+        virtio_net_tests
+        PRIVATE
+            rv_system)
+
+    rv_enable_warnings(virtio_net_tests)
+
+    add_test(
+        NAME virtio_net_tests
+        COMMAND virtio_net_tests)
+
+    add_executable(
+        goldfish_rtc_tests
+        tests/goldfish_rtc_tests.cpp)
+
+    target_link_libraries(
+        goldfish_rtc_tests
+        PRIVATE
+            rv_system)
+
+    rv_enable_warnings(goldfish_rtc_tests)
+
+    add_test(
+        NAME goldfish_rtc_tests
+        COMMAND goldfish_rtc_tests)
+
+    if(RV_ENABLE_NETWORK)
+        add_executable(
+            slirp_network_backend_tests
+            tests/slirp_network_backend_tests.cpp)
+
+        target_link_libraries(
+            slirp_network_backend_tests
+            PRIVATE
+                rv_host_network)
+
+        rv_enable_warnings(slirp_network_backend_tests)
+
+        add_test(
+            NAME slirp_network_backend_tests
+            COMMAND slirp_network_backend_tests)
+    endif()
 
     find_program(
         RV_FDTGET

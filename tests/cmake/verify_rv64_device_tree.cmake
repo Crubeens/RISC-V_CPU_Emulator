@@ -61,6 +61,21 @@ assert_fdt_property(
     "x"
     "0 2000000 0 10000")
 assert_fdt_property(
+    "/soc/rtc@101000"
+    "compatible"
+    "s"
+    "google,goldfish-rtc")
+assert_fdt_property(
+    "/soc/rtc@101000"
+    "reg"
+    "x"
+    "0 101000 0 1000")
+assert_fdt_property(
+    "/soc/rtc@101000"
+    "interrupts"
+    "x"
+    "b")
+assert_fdt_property(
     "/soc/interrupt-controller@c000000"
     "reg"
     "x"
@@ -91,6 +106,21 @@ assert_fdt_property(
     "x"
     "1")
 assert_fdt_property(
+    "/soc/virtio_mmio@10002000"
+    "compatible"
+    "s"
+    "virtio,mmio")
+assert_fdt_property(
+    "/soc/virtio_mmio@10002000"
+    "reg"
+    "x"
+    "0 10002000 0 1000")
+assert_fdt_property(
+    "/soc/virtio_mmio@10002000"
+    "interrupts"
+    "x"
+    "2")
+assert_fdt_property(
     "/soc/syscon@11100000"
     "reg"
     "x"
@@ -104,7 +134,7 @@ assert_fdt_property(
     "/chosen"
     "bootargs"
     "s"
-    "console=tty0 console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait")
+    "console=tty0 console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait net.ifnames=0")
 assert_fdt_property(
     "/chosen"
     "ranges"

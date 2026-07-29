@@ -15,7 +15,7 @@
         #size-cells = <2>;
         ranges;
         stdout-path = "serial0:115200n8";
-        bootargs = "console=tty0 console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait";
+        bootargs = "console=tty0 console=ttyS0,115200 earlycon=uart8250,mmio,0x10000000 root=/dev/vda rw rootwait net.ifnames=0";
 
         framebuffer@40000000 {
             compatible = "simple-framebuffer";
@@ -68,6 +68,13 @@
                 <&cpu0_intc 3 &cpu0_intc 7>;
         };
 
+        rtc@101000 {
+            compatible = "google,goldfish-rtc";
+            reg = <0x0 0x00101000 0x0 0x00001000>;
+            interrupt-parent = <&plic>;
+            interrupts = <11>;
+        };
+
         plic: interrupt-controller@c000000 {
             #address-cells = <0>;
             #interrupt-cells = <1>;
@@ -95,6 +102,13 @@
             reg = <0x0 0x10001000 0x0 0x00001000>;
             interrupt-parent = <&plic>;
             interrupts = <1>;
+        };
+
+        virtio_net: virtio_mmio@10002000 {
+            compatible = "virtio,mmio";
+            reg = <0x0 0x10002000 0x0 0x00001000>;
+            interrupt-parent = <&plic>;
+            interrupts = <2>;
         };
 
         syscon: syscon@11100000 {

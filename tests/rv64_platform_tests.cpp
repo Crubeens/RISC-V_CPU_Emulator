@@ -4,6 +4,7 @@
 
 #include "rv/devices/uart16550.hpp"
 #include "rv/devices/ram.hpp"
+#include "rv/devices/virtio_net.hpp"
 #include "rv64/platform/machine.hpp"
 
 namespace {
@@ -152,6 +153,77 @@ void test_platform_interrupt_wiring()
     CHECK(machine.irq_lines().machine_external);
 }
 
+void test_rv64_only_network_device_and_plic_wiring()
+{
+    rv64::platform::Machine machine({
+        .ram_size = 1ULL * 1024ULL * 1024ULL,
+        .virtual_disk_size = 512ULL,
+        .enable_framebuffer = false,
+    });
+    auto& bus = machine.bus();
+    constexpr auto queue_memory =
+        rv64::platform::address_map::dram_base;
+    constexpr std::uint16_t queue_size = 8;
+    constexpr std::uint32_t page_size = 4096;
+    constexpr auto available_ring =
+        queue_memory + queue_size * 16U;
+
+    CHECK(
+        bus.read(
+            rv64::platform::address_map::virtio_net_base + 8U,
+            rv::AccessWidth::Word,
+            rv::AccessKind::Load).value == 1U);
+    CHECK(
+        bus.write(
+            rv64::platform::address_map::plic_base +
+                4U * rv64::platform::address_map::virtio_net_irq,
+            rv::AccessWidth::Word,
+            1U,
+            rv::AccessKind::Store) == rv::BusFault::None);
+    CHECK(
+        bus.write(
+            rv64::platform::address_map::plic_base + 0x2000U,
+            rv::AccessWidth::Word,
+            1U << rv64::platform::address_map::virtio_net_irq,
+            rv::AccessKind::Store) == rv::BusFault::None);
+
+    const auto write_net = [&bus](
+                               std::uint64_t offset,
+                               std::uint32_t value) {
+        CHECK(
+            bus.write(
+                rv64::platform::address_map::virtio_net_base +
+                    offset,
+                rv::AccessWidth::Word,
+                value,
+                rv::AccessKind::Store) == rv::BusFault::None);
+    };
+    write_net(0x028U, page_size);
+    write_net(0x030U, rv::devices::VirtioNet::transmit_queue);
+    write_net(0x038U, queue_size);
+    write_net(0x03CU, page_size);
+    write_net(
+        0x040U,
+        static_cast<std::uint32_t>(queue_memory / page_size));
+
+    CHECK(
+        bus.write(
+            available_ring + 4U,
+            rv::AccessWidth::HalfWord,
+            0U,
+            rv::AccessKind::Store) == rv::BusFault::None);
+    CHECK(
+        bus.write(
+            available_ring + 2U,
+            rv::AccessWidth::HalfWord,
+            1U,
+            rv::AccessKind::Store) == rv::BusFault::None);
+    write_net(0x050U, rv::devices::VirtioNet::transmit_queue);
+    static_cast<void>(machine.step());
+    CHECK(machine.virtio_net().interrupt_pending());
+    CHECK(machine.irq_lines().machine_external);
+}
+
 } // namespace
 
 int main()
@@ -160,6 +232,7 @@ int main()
     test_boot_layout_and_64_bit_boot_registers();
     test_boot_rejects_invalid_layouts();
     test_platform_interrupt_wiring();
+    test_rv64_only_network_device_and_plic_wiring();
     if (failures == 0) {
         std::cout << "All independent RV64 platform tests passed\n";
     }
