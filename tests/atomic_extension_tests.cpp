@@ -8,8 +8,8 @@
 #include "rv32/core/csr.hpp"
 #include "rv32/core/execute.hpp"
 #include "rv32/core/trap.hpp"
-#include "rv32/devices/ram.hpp"
-#include "rv32/platform/system_bus.hpp"
+#include "rv/devices/ram.hpp"
+#include "rv/platform/system_bus.hpp"
 
 namespace {
 
@@ -105,7 +105,7 @@ void check_atomic_fault_trap(
 }
 
 [[nodiscard]] std::uint32_t read_word(
-    rv32::platform::SystemBus& bus,
+    rv::platform::SystemBus& bus,
     rv32::PhysAddr address)
 {
     const auto result = bus.read(
@@ -277,9 +277,9 @@ void test_all_word_amo_operations()
     constexpr std::uint32_t rd = 7U;
 
     for (const auto& test : amo_cases) {
-        rv32::platform::SystemBus bus;
+        rv::platform::SystemBus bus;
         static_cast<void>(
-            bus.emplace_device<rv32::devices::Ram>(
+            bus.emplace_device<rv::devices::Ram>(
                 ram_base,
                 0x1000U));
         CHECK(
@@ -353,9 +353,9 @@ void test_all_word_amo_operations()
 
 void test_lr_sc_success_failure_and_invalidation()
 {
-    rv32::platform::SystemBus bus;
+    rv::platform::SystemBus bus;
     static_cast<void>(
-        bus.emplace_device<rv32::devices::Ram>(
+        bus.emplace_device<rv::devices::Ram>(
             ram_base,
             0x1000U));
     CHECK(
@@ -489,9 +489,9 @@ void test_lr_sc_success_failure_and_invalidation()
 
 void test_atomic_fault_mapping()
 {
-    rv32::platform::SystemBus bus;
+    rv::platform::SystemBus bus;
     static_cast<void>(
-        bus.emplace_device<rv32::devices::Ram>(
+        bus.emplace_device<rv::devices::Ram>(
             ram_base,
             0x1000U));
 
@@ -607,9 +607,9 @@ void test_atomic_fault_mapping()
 
 void test_atomic_rd_x0_keeps_memory_side_effect()
 {
-    rv32::platform::SystemBus bus;
+    rv::platform::SystemBus bus;
     static_cast<void>(
-        bus.emplace_device<rv32::devices::Ram>(
+        bus.emplace_device<rv::devices::Ram>(
             ram_base,
             0x1000U));
     CHECK(
@@ -640,9 +640,9 @@ void test_atomic_rd_x0_keeps_memory_side_effect()
 
 void test_atomic_instructions_flow_through_core_step()
 {
-    rv32::platform::SystemBus bus;
+    rv::platform::SystemBus bus;
     static_cast<void>(
-        bus.emplace_device<rv32::devices::Ram>(
+        bus.emplace_device<rv::devices::Ram>(
             ram_base,
             0x2000U));
 
@@ -719,9 +719,9 @@ void test_core_step_atomic_faults_are_precise()
     };
 
     for (const auto& test : cases) {
-        rv32::platform::SystemBus bus;
+        rv::platform::SystemBus bus;
         static_cast<void>(
-            bus.emplace_device<rv32::devices::Ram>(
+            bus.emplace_device<rv::devices::Ram>(
                 ram_base,
                 0x1000U));
         CHECK(

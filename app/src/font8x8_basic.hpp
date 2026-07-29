@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-namespace rv32::app {
+namespace rv::app {
 
 // U+0020 through U+007F from Daniel Hepper's public-domain font8x8_basic.
 inline constexpr std::array<std::array<std::uint8_t, 8>, 96>
@@ -106,4 +106,4 @@ inline constexpr std::array<std::array<std::uint8_t, 8>, 96>
         {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}}, // DEL
     }};
 
-} // namespace rv32::app
+} // namespace rv::app

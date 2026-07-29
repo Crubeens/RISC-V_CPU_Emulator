@@ -1,5 +1,44 @@
-.\build\release\rv32_emulator.exe --boot-disk `
-  ".\build\boot-images\opensbi-v1.8.1-rv32-fw_jump.bin" `
-  ".\build\boot-images\linux-v6.12.96-rv32ima-Image" `
+RISC-V CPU Emulator 启动命令
+================================
+
+以下命令均在项目根目录的 PowerShell 中执行。
+省略 --cpu 时默认使用 RV32。
+
+一、RV32 Linux + 可回写 ext4 虚拟磁盘
+
+.\build\release\riscv_emulator.exe --cpu rv32 --boot-disk `
+  ".\boot-images\opensbi-v1.8.1-rv32-fw_jump.bin" `
+  ".\boot-images\linux-v6.12.96-rv32ima-Image" `
   ".\build\release\images\rv32-virt.dtb" `
-  ".\build\boot-images\rv32ima-linux-runtime-rootfs.ext4"
+  ".\boot-images\buildroot-2025.02.16-rv32ima-rootfs.ext4"
+
+二、RV64 Linux + 可回写 ext4 虚拟磁盘
+
+.\build\release\riscv_emulator.exe --cpu rv64 --boot-disk `
+  ".\boot-images\opensbi-v1.8.1-rv64-fw_jump.bin" `
+  ".\boot-images\linux-v6.12.96-rv64imac-Image" `
+  ".\build\release\images\rv64-virt.dtb" `
+  ".\boot-images\rootfs-buildroot-v2025.02.16-rv64imac.ext4"
+
+三、SDL 图形界面
+
+在 --boot 或 --boot-disk 前增加 --gui，例如：
+
+.\build\release\riscv_emulator.exe --cpu rv64 --gui --boot-disk `
+  ".\boot-images\opensbi-v1.8.1-rv64-fw_jump.bin" `
+  ".\boot-images\linux-v6.12.96-rv64imac-Image" `
+  ".\build\release\images\rv64-virt.dtb" `
+  ".\boot-images\rootfs-buildroot-v2025.02.16-rv64imac.ext4"
+
+F1：UART 终端
+F2：客户机 Framebuffer
+
+四、可选步数上限
+
+在命令最后追加正整数可限制 machine steps，例如 100000000。
+不追加时，--boot-disk 会持续运行到客户机请求关机。
+
+五、镜像位置
+
+boot-images 目录位于项目根目录，不在 build 目录内。
+删除或重新生成 build 目录不会覆盖 OpenSBI、Linux 和根文件系统镜像。

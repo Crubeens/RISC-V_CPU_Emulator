@@ -1,8 +1,8 @@
-#include "rv32/devices/uart16550.hpp"
+#include "rv/devices/uart16550.hpp"
 
 #include <utility>
 
-namespace rv32::devices {
+namespace rv::devices {
 
 namespace {
 constexpr std::uint8_t ier_received_data = 1U << 0U;
@@ -195,4 +195,4 @@ std::uint8_t Uart16550::interrupt_identification()
     return 0x01U;
 }
 
-} // namespace rv32::devices
+} // namespace rv::devices

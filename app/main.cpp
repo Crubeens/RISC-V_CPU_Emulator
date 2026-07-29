@@ -21,16 +21,16 @@
 #include <unistd.h>
 #endif
 
-#if defined(RV32_ENABLE_SDL)
-#include "rv32/app/sdl_frontend.hpp"
+#if defined(RV_ENABLE_SDL)
+#include "rv/app/sdl_frontend.hpp"
 #endif
 
 #include "rv32/core/core.hpp"
-#include "rv32/devices/clint.hpp"
-#include "rv32/devices/framebuffer.hpp"
-#include "rv32/devices/syscon.hpp"
-#include "rv32/devices/uart16550.hpp"
-#include "rv32/devices/virtio_block.hpp"
+#include "rv/devices/clint.hpp"
+#include "rv/devices/framebuffer.hpp"
+#include "rv/devices/syscon.hpp"
+#include "rv/devices/uart16550.hpp"
+#include "rv/devices/virtio_block.hpp"
 #include "rv32/platform/machine.hpp"
 #include "rv64/app/cli.hpp"
 
@@ -105,7 +105,7 @@ bool read_virtual_disk(
     }
 
     const auto sector_size = static_cast<std::size_t>(
-        rv32::devices::VirtioBlock::sector_size);
+        rv::devices::VirtioBlock::sector_size);
     if ((image.size() % sector_size) != 0U) {
         std::cerr
             << "Virtual disk image size must be a multiple of "
@@ -258,7 +258,7 @@ int load_boot_images(int argc, char** argv)
 {
     if (argc != 5) {
         std::cerr
-            << "usage: rv32_emulator --load-images "
+            << "usage: riscv_emulator --load-images "
             << "<opensbi.bin> <linux-image> <board.dtb>\n";
         return 2;
     }
@@ -598,7 +598,7 @@ int run_boot(
     const int required_arguments = use_virtual_disk ? 6 : 5;
     if (argc != required_arguments &&
         argc != required_arguments + 1) {
-        std::cerr << "usage: rv32_emulator "
+        std::cerr << "usage: riscv_emulator "
             << (use_virtual_disk ? "--boot-disk " : "--boot ")
             << "<opensbi.bin> <linux-image> <board.dtb> ";
         if (use_virtual_disk) {
@@ -670,8 +670,8 @@ int run_boot(
     std::cout
         << "Host terminal input is connected to guest UART.\n";
 
-#if defined(RV32_ENABLE_SDL)
-    std::unique_ptr<rv32::app::SdlFrontend> gui;
+#if defined(RV_ENABLE_SDL)
+    std::unique_ptr<rv::app::SdlFrontend> gui;
 #endif
     const auto run_started = std::chrono::steady_clock::now();
     const auto finish =
@@ -679,7 +679,7 @@ int run_boot(
             print_performance_diagnostics(
                 machine,
                 std::chrono::steady_clock::now() - run_started);
-#if defined(RV32_ENABLE_SDL)
+#if defined(RV_ENABLE_SDL)
             if (gui != nullptr) {
                 const auto& gui_statistics =
                     gui->performance_counters();
@@ -729,9 +729,9 @@ int run_boot(
                        : 7;
         };
 
-#if defined(RV32_ENABLE_SDL)
+#if defined(RV_ENABLE_SDL)
     if (use_gui) {
-        gui = std::make_unique<rv32::app::SdlFrontend>();
+        gui = std::make_unique<rv::app::SdlFrontend>();
         if (!gui->ready()) {
             std::cerr
                 << "Cannot start SDL graphical frontend: "
@@ -756,7 +756,7 @@ int run_boot(
     for (std::uint64_t step = 0; step < step_limit; ++step) {
         if ((step % console_poll_interval) == 0U) {
             forward_console_input(machine);
-#if defined(RV32_ENABLE_SDL)
+#if defined(RV_ENABLE_SDL)
             if (gui != nullptr && gui->active()) {
                 const auto input = gui->poll_input();
                 if (!input.empty()) {
@@ -768,7 +768,7 @@ int run_boot(
         }
         const auto result = machine.step();
         const auto uart_output = flush_uart(machine);
-#if defined(RV32_ENABLE_SDL)
+#if defined(RV_ENABLE_SDL)
         if (gui != nullptr && !uart_output.empty()) {
             gui->append_uart(uart_output);
         }
@@ -777,9 +777,9 @@ int run_boot(
 #endif
 
         const auto action = machine.syscon().requested_action();
-        if (action != rv32::devices::SystemAction::None) {
+        if (action != rv::devices::SystemAction::None) {
             const auto action_name =
-                action == rv32::devices::SystemAction::PowerOff
+                action == rv::devices::SystemAction::PowerOff
                     ? "power off"
                     : "reboot";
             std::cout
@@ -802,7 +802,7 @@ int run_boot(
     }
 
     const auto uart_output = flush_uart(machine);
-#if defined(RV32_ENABLE_SDL)
+#if defined(RV_ENABLE_SDL)
     if (gui != nullptr) {
         if (!uart_output.empty()) {
             gui->append_uart(uart_output);
@@ -926,21 +926,21 @@ int main(int argc, char** argv)
 
     std::cerr
         << "usage:\n"
-        << "  rv32_emulator\n"
-        << "  rv32_emulator --cpu rv32|rv64 [command]\n"
-        << "  rv32_emulator --load-images "
+        << "  riscv_emulator\n"
+        << "  riscv_emulator --cpu rv32|rv64 [command]\n"
+        << "  riscv_emulator --load-images "
         << "<opensbi.bin> <linux-image> <board.dtb>\n"
-        << "  rv32_emulator --boot "
+        << "  riscv_emulator --boot "
         << "<opensbi.bin> <linux-image> <board.dtb> "
         << "[max-steps]\n"
-        << "  rv32_emulator --boot-disk "
+        << "  riscv_emulator --boot-disk "
         << "<opensbi.bin> <linux-image> <board.dtb> "
         << "<disk-image> "
         << "[max-steps]\n"
-        << "  rv32_emulator --gui --boot "
+        << "  riscv_emulator --gui --boot "
         << "<opensbi.bin> <linux-image> <board.dtb> "
         << "[max-steps]\n"
-        << "  rv32_emulator --gui --boot-disk "
+        << "  riscv_emulator --gui --boot-disk "
         << "<opensbi.bin> <linux-image> <board.dtb> "
         << "<disk-image> "
         << "[max-steps]\n";

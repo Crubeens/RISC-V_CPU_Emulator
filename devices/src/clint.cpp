@@ -1,8 +1,8 @@
-#include "rv32/devices/clint.hpp"
+#include "rv/devices/clint.hpp"
 
 #include <limits>
 
-namespace rv32::devices {
+namespace rv::devices {
 
 Clint::Clint(PhysAddr base, std::uint64_t size)
     : range_{.base = base, .size = size}
@@ -187,4 +187,4 @@ BusFault Clint::write_register(
     return BusFault::None;
 }
 
-} // namespace rv32::devices
+} // namespace rv::devices

@@ -4,9 +4,9 @@
 
 #include <SDL.h>
 
-#include "rv32/app/sdl_frontend.hpp"
-#include "rv32/devices/framebuffer.hpp"
-#include "rv32/devices/uart16550.hpp"
+#include "rv/app/sdl_frontend.hpp"
+#include "rv/devices/framebuffer.hpp"
+#include "rv/devices/uart16550.hpp"
 
 namespace {
 
@@ -85,11 +85,11 @@ void test_window_input_and_framebuffer()
     CHECK(SDL_setenv("SDL_VIDEODRIVER", "dummy", 1) == 0);
     CHECK(SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software") == SDL_TRUE);
 
-    rv32::app::SdlFrontend frontend;
+    rv::app::SdlFrontend frontend;
     CHECK(frontend.ready());
     CHECK(frontend.active());
     CHECK(frontend.error().empty());
-    CHECK(frontend.view() == rv32::app::DisplayView::Terminal);
+    CHECK(frontend.view() == rv::app::DisplayView::Terminal);
 
     push_printable(SDLK_a, "a");
     push_printable(SDLK_b, "b");
@@ -116,18 +116,18 @@ void test_window_input_and_framebuffer()
     }
     CHECK(frontend.poll_input() == expected_burst);
 
-    rv32::devices::Uart16550 uart(0x10000000ULL, 0x100U);
+    rv::devices::Uart16550 uart(0x10000000ULL, 0x100U);
     uart.inject_received(input);
     for (const char expected : input) {
         const auto received =
-            uart.read(0, rv32::AccessWidth::Byte);
+            uart.read(0, rv::AccessWidth::Byte);
         CHECK(received.ok());
         CHECK(
             received.value ==
             static_cast<unsigned char>(expected));
     }
 
-    rv32::devices::Framebuffer framebuffer(
+    rv::devices::Framebuffer framebuffer(
         0x40000000ULL,
         640U,
         480U,
@@ -135,9 +135,9 @@ void test_window_input_and_framebuffer()
     CHECK(
         framebuffer.write(
             0,
-            rv32::AccessWidth::Word,
+            rv::AccessWidth::Word,
             0x00112233U) ==
-        rv32::BusFault::None);
+        rv::BusFault::None);
     CHECK(framebuffer.dirty());
 
     frontend.append_uart("UART terminal output\r\n");
@@ -174,7 +174,7 @@ void test_window_input_and_framebuffer()
 
     push_key(SDLK_F2);
     CHECK(frontend.poll_input().empty());
-    CHECK(frontend.view() == rv32::app::DisplayView::Framebuffer);
+    CHECK(frontend.view() == rv::app::DisplayView::Framebuffer);
     frontend.present(&framebuffer);
     CHECK(!framebuffer.dirty());
     CHECK(
@@ -186,9 +186,9 @@ void test_window_input_and_framebuffer()
     CHECK(
         framebuffer.write(
             changed_pixel,
-            rv32::AccessWidth::Word,
+            rv::AccessWidth::Word,
             0x00445566U) ==
-        rv32::BusFault::None);
+        rv::BusFault::None);
     SDL_Delay(20U);
     const auto partial_before =
         frontend.performance_counters().partial_texture_uploads;
@@ -203,7 +203,7 @@ void test_window_input_and_framebuffer()
 
     push_key(SDLK_F1);
     static_cast<void>(frontend.poll_input());
-    CHECK(frontend.view() == rv32::app::DisplayView::Terminal);
+    CHECK(frontend.view() == rv::app::DisplayView::Terminal);
     frontend.present(&framebuffer);
 
     for (int index = 0; index < 16; ++index) {
@@ -212,7 +212,7 @@ void test_window_input_and_framebuffer()
     }
     push_key(SDLK_F2);
     CHECK(frontend.poll_input().empty());
-    CHECK(frontend.view() == rv32::app::DisplayView::Framebuffer);
+    CHECK(frontend.view() == rv::app::DisplayView::Framebuffer);
     frontend.present(&framebuffer);
 
     SDL_Event quit{};

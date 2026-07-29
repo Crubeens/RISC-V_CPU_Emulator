@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string>
 
-#include "rv32/app/terminal_console.hpp"
+#include "rv/app/terminal_console.hpp"
 
 namespace {
 
@@ -18,7 +18,7 @@ int failures = 0;
 
 void test_text_and_control_characters()
 {
-    rv32::app::TerminalConsole terminal;
+    rv::app::TerminalConsole terminal;
     terminal.clear_dirty();
     terminal.append("abc\rZ\r\nline\b!");
 
@@ -36,7 +36,7 @@ void test_text_and_control_characters()
 
 void test_ansi_cursor_and_erase_sequences()
 {
-    rv32::app::TerminalConsole terminal;
+    rv::app::TerminalConsole terminal;
     terminal.append("discarded");
     terminal.append("\x1b[2J\x1b[2;3HX");
 
@@ -55,10 +55,10 @@ void test_ansi_cursor_and_erase_sequences()
 
 void test_scrolling_keeps_latest_lines()
 {
-    rv32::app::TerminalConsole terminal;
+    rv::app::TerminalConsole terminal;
     terminal.clear();
     for (std::size_t line = 0;
-         line < rv32::app::TerminalConsole::rows;
+         line < rv::app::TerminalConsole::rows;
          ++line) {
         const char marker =
             static_cast<char>('A' + static_cast<int>(line % 26U));
@@ -70,14 +70,14 @@ void test_scrolling_keeps_latest_lines()
     CHECK(
         terminal.cell(
             0,
-            rv32::app::TerminalConsole::rows - 2U) ==
+            rv::app::TerminalConsole::rows - 2U) ==
         static_cast<char>(
             'A' +
             static_cast<int>(
-                (rv32::app::TerminalConsole::rows - 1U) % 26U)));
+                (rv::app::TerminalConsole::rows - 1U) % 26U)));
     CHECK(
         terminal.cursor_row() ==
-        rv32::app::TerminalConsole::rows - 1U);
+        rv::app::TerminalConsole::rows - 1U);
 }
 
 } // namespace

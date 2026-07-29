@@ -5,27 +5,27 @@
 #include <iostream>
 #include <string_view>
 
-#include "rv32/devices/framebuffer.hpp"
+#include "rv/devices/framebuffer.hpp"
 
 namespace {
 
 constexpr std::uint32_t width = 640U;
 constexpr std::uint32_t height = 480U;
 constexpr std::uint32_t bytes_per_pixel = 4U;
-constexpr rv32::PhysAddr base = 0x40000000ULL;
+constexpr rv::PhysAddr base = 0x40000000ULL;
 
 struct BenchmarkResult {
     std::string_view name;
     double seconds{};
     std::uint64_t bytes{};
-    rv32::devices::FramebufferDirtyRegion dirty{};
+    rv::devices::FramebufferDirtyRegion dirty{};
     bool passed{};
 };
 
 template <typename Operation>
 [[nodiscard]] BenchmarkResult run(
     std::string_view name,
-    rv32::devices::Framebuffer& framebuffer,
+    rv::devices::Framebuffer& framebuffer,
     std::uint64_t bytes,
     Operation operation)
 {
@@ -45,18 +45,18 @@ template <typename Operation>
 }
 
 [[nodiscard]] bool write_word(
-    rv32::devices::Framebuffer& framebuffer,
+    rv::devices::Framebuffer& framebuffer,
     std::uint64_t pixel,
     std::uint32_t value)
 {
     return framebuffer.write(
                pixel * bytes_per_pixel,
-               rv32::AccessWidth::Word,
-               value) == rv32::BusFault::None;
+               rv::AccessWidth::Word,
+               value) == rv::BusFault::None;
 }
 
 [[nodiscard]] BenchmarkResult full_fill(
-    rv32::devices::Framebuffer& framebuffer,
+    rv::devices::Framebuffer& framebuffer,
     std::uint32_t frames)
 {
     const std::uint64_t pixels =
@@ -80,7 +80,7 @@ template <typename Operation>
 }
 
 [[nodiscard]] BenchmarkResult full_copy(
-    rv32::devices::Framebuffer& framebuffer,
+    rv::devices::Framebuffer& framebuffer,
     std::uint32_t frames)
 {
     const std::uint64_t pixels =
@@ -94,7 +94,7 @@ template <typename Operation>
                 for (std::uint64_t pixel = 1; pixel < pixels; ++pixel) {
                     const auto source = framebuffer.read(
                         (pixel - 1U) * bytes_per_pixel,
-                        rv32::AccessWidth::Word);
+                        rv::AccessWidth::Word);
                     if (!source.ok() ||
                         !write_word(
                             framebuffer,
@@ -109,7 +109,7 @@ template <typename Operation>
 }
 
 [[nodiscard]] BenchmarkResult text_scroll(
-    rv32::devices::Framebuffer& framebuffer,
+    rv::devices::Framebuffer& framebuffer,
     std::uint32_t scrolls)
 {
     constexpr std::uint32_t glyph_height = 16U;
@@ -129,7 +129,7 @@ template <typename Operation>
                      ++pixel) {
                     const auto source = framebuffer.read(
                         (pixel + cleared_pixels) * bytes_per_pixel,
-                        rv32::AccessWidth::Word);
+                        rv::AccessWidth::Word);
                     if (!source.ok() ||
                         !write_word(
                             framebuffer,
@@ -151,7 +151,7 @@ template <typename Operation>
 }
 
 [[nodiscard]] BenchmarkResult local_animation(
-    rv32::devices::Framebuffer& framebuffer,
+    rv::devices::Framebuffer& framebuffer,
     std::uint32_t frames)
 {
     constexpr std::uint32_t side = 64U;
@@ -216,7 +216,7 @@ int main(int argc, char** argv)
         return 2;
     }
 
-    rv32::devices::Framebuffer framebuffer(
+    rv::devices::Framebuffer framebuffer(
         base,
         width,
         height,

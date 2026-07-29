@@ -10,8 +10,8 @@
 #include "rv32/core/interrupt.hpp"
 #include "rv32/core/mmu.hpp"
 #include "rv32/core/trap.hpp"
-#include "rv32/devices/clint.hpp"
-#include "rv32/devices/plic.hpp"
+#include "rv/devices/clint.hpp"
+#include "rv/devices/plic.hpp"
 #include "rv32/platform/address_map.hpp"
 #include "rv32/platform/machine.hpp"
 

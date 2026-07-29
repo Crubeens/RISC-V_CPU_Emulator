@@ -6,7 +6,7 @@
 #include <string_view>
 #include <system_error>
 
-#include "rv32/devices/ram.hpp"
+#include "rv/devices/ram.hpp"
 #include "rv32/platform/machine.hpp"
 
 namespace {
@@ -17,7 +17,7 @@ struct BenchmarkResult {
     double seconds{};
     double million_steps_per_second{};
     rv32::CorePerformanceCounters core{};
-    rv32::platform::BusPerformanceCounters bus{};
+    rv::platform::BusPerformanceCounters bus{};
 };
 
 [[nodiscard]] bool parse_steps(

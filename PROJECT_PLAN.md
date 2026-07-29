@@ -110,17 +110,23 @@ CPU 不允许：
 ## 4. 模块划分
 
 ```text
-core/
-  自研 CPU 状态、译码、执行、CSR、Trap、MMU
+core32/
+  自研 RV32 CPU 状态、译码、执行、CSR、Trap、Sv32
 
-platform/
-  统一总线、DMA、整机装配、设备调度、镜像加载
+core64/
+  独立 RV64 CPU 状态、译码、执行、CSR、Trap、Sv39
+
+common/
+  RV32/RV64 共用的物理总线接口和系统总线
+
+platform32/、platform64/
+  各自的地址布局、整机装配、设备调度、设备树和镜像加载
 
 devices/
   RAM、CLINT、PLIC、UART、VirtIO Block、VirtIO Net、SYSCON、Framebuffer
 
 app/
-  命令行入口和未来的 GUI 入口
+  统一命令行入口、宿主终端和 SDL GUI
 
 tests/
   单元测试、架构测试、差分测试、Linux 集成测试
@@ -275,7 +281,7 @@ Linux Image 默认放置在 `0x80400000`，满足 RV32 内核 4 MiB 对齐要求
 
 实现边界：
 
-- 所有优化只位于 `core/` 内部或 Machine 调度层，不允许 CPU 依赖具体设备。
+- 所有优化只位于 `core32/` 内部或 Machine 调度层，不允许 CPU 依赖具体设备。
 - 保留逐条参考解释模式和 Commit Trace；差分测试必须能够强制使用参考模式。
 - 不实现流水线、乱序、周期精确 Cache 或多 Hart。
 - 本阶段不实现 JIT，也不通过跳过异常、CSR、页表权限检查来换取速度。

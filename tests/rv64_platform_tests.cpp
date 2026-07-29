@@ -2,8 +2,8 @@
 #include <cstdint>
 #include <iostream>
 
-#include "rv32/devices/uart16550.hpp"
-#include "rv32/devices/ram.hpp"
+#include "rv/devices/uart16550.hpp"
+#include "rv/devices/ram.hpp"
 #include "rv64/platform/machine.hpp"
 
 namespace {

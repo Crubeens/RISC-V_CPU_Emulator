@@ -4,6 +4,8 @@
 /.cache/
 /.idea/
 **/.vscode/
+!/.vscode/
+!/.vscode/settings.json
 desktop.ini
 *.user
 *.suo

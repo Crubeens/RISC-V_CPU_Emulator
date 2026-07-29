@@ -1,41 +1,41 @@
 #include "rv64/platform/machine.hpp"
 
-#include "rv32/devices/clint.hpp"
-#include "rv32/devices/framebuffer.hpp"
-#include "rv32/devices/plic.hpp"
-#include "rv32/devices/ram.hpp"
-#include "rv32/devices/syscon.hpp"
-#include "rv32/devices/uart16550.hpp"
-#include "rv32/devices/virtio_block.hpp"
+#include "rv/devices/clint.hpp"
+#include "rv/devices/framebuffer.hpp"
+#include "rv/devices/plic.hpp"
+#include "rv/devices/ram.hpp"
+#include "rv/devices/syscon.hpp"
+#include "rv/devices/uart16550.hpp"
+#include "rv/devices/virtio_block.hpp"
 
 namespace rv64::platform {
 
 Machine::Machine(const MachineConfig& config)
     : core_(bus_)
 {
-    ram_ = &bus_.emplace_device<rv32::devices::Ram>(
+    ram_ = &bus_.emplace_device<rv::devices::Ram>(
         address_map::dram_base,
         config.ram_size);
-    clint_ = &bus_.emplace_device<rv32::devices::Clint>(
+    clint_ = &bus_.emplace_device<rv::devices::Clint>(
         address_map::clint_base,
         address_map::clint_size);
-    plic_ = &bus_.emplace_device<rv32::devices::Plic>(
+    plic_ = &bus_.emplace_device<rv::devices::Plic>(
         address_map::plic_base,
         address_map::plic_size);
-    uart_ = &bus_.emplace_device<rv32::devices::Uart16550>(
+    uart_ = &bus_.emplace_device<rv::devices::Uart16550>(
         address_map::uart_base,
         address_map::uart_size);
     virtio_block_ =
-        &bus_.emplace_device<rv32::devices::VirtioBlock>(
+        &bus_.emplace_device<rv::devices::VirtioBlock>(
             address_map::virtio_block_base,
             address_map::virtio_block_size,
             config.virtual_disk_size);
-    syscon_ = &bus_.emplace_device<rv32::devices::Syscon>(
+    syscon_ = &bus_.emplace_device<rv::devices::Syscon>(
         address_map::syscon_base,
         address_map::syscon_size);
     if (config.enable_framebuffer) {
         framebuffer_ =
-            &bus_.emplace_device<rv32::devices::Framebuffer>(
+            &bus_.emplace_device<rv::devices::Framebuffer>(
                 address_map::framebuffer_base,
                 config.framebuffer_width,
                 config.framebuffer_height,
@@ -164,39 +164,49 @@ const Core& Machine::core() const noexcept
     return core_;
 }
 
-rv32::platform::SystemBus& Machine::bus() noexcept
+rv::platform::SystemBus& Machine::bus() noexcept
 {
     return bus_;
 }
 
-const rv32::platform::SystemBus& Machine::bus() const noexcept
+const rv::platform::SystemBus& Machine::bus() const noexcept
 {
     return bus_;
 }
 
-rv32::devices::Ram& Machine::ram() noexcept
+rv::devices::Ram& Machine::ram() noexcept
 {
     return *ram_;
 }
 
-rv32::devices::Clint& Machine::clint() noexcept
+rv::devices::Clint& Machine::clint() noexcept
 {
     return *clint_;
 }
 
-rv32::devices::Plic& Machine::plic() noexcept
+rv::devices::Plic& Machine::plic() noexcept
 {
     return *plic_;
 }
 
-rv32::devices::Uart16550& Machine::uart() noexcept
+rv::devices::Uart16550& Machine::uart() noexcept
 {
     return *uart_;
 }
 
-rv32::devices::VirtioBlock& Machine::virtio_block() noexcept
+rv::devices::VirtioBlock& Machine::virtio_block() noexcept
 {
     return *virtio_block_;
+}
+
+rv::devices::Syscon& Machine::syscon() noexcept
+{
+    return *syscon_;
+}
+
+rv::devices::Framebuffer* Machine::framebuffer() noexcept
+{
+    return framebuffer_;
 }
 
 const IrqLines& Machine::irq_lines() const noexcept

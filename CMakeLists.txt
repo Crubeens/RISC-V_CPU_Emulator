@@ -1,18 +1,18 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(
-    rv32_cpu_emulator
+    riscv_cpu_emulator
     VERSION 0.1.0
-    DESCRIPTION "Modular RV32 system emulator"
+    DESCRIPTION "Modular RV32/RV64 system emulator"
     LANGUAGES CXX)
 
-option(RV32_BUILD_TESTS "Build framework tests" ON)
+option(RV_BUILD_TESTS "Build framework tests" ON)
 option(
     RV32_BUILD_BAREMETAL_TESTS
     "Build and run the RV32I bare-metal acceptance test"
     ON)
 option(
-    RV32_ENABLE_SDL
+    RV_ENABLE_SDL
     "Build the M7 SDL graphical frontend"
     ON)
 
@@ -27,11 +27,11 @@ target_include_directories(
         ${PROJECT_SOURCE_DIR}/common/include)
 
 find_program(
-    RV32_DTC
+    RV_DTC
     NAMES dtc
     HINTS
         "C:/msys64/ucrt64/bin")
-if(NOT RV32_DTC)
+if(NOT RV_DTC)
     message(
         FATAL_ERROR
         "M5 requires the Device Tree Compiler (dtc)")
@@ -51,14 +51,14 @@ add_custom_command(
         ${CMAKE_COMMAND} -E make_directory
         "${RV32_GENERATED_IMAGE_DIR}"
     COMMAND
-        "${RV32_DTC}"
+        "${RV_DTC}"
         -I dts
         -O dtb
         -o
         "${RV32_VIRT_DTB}"
-        "${PROJECT_SOURCE_DIR}/platform/dts/rv32-virt.dts"
+        "${PROJECT_SOURCE_DIR}/platform32/dts/rv32-virt.dts"
     DEPENDS
-        platform/dts/rv32-virt.dts
+        platform32/dts/rv32-virt.dts
     VERBATIM)
 
 add_custom_target(
@@ -67,7 +67,37 @@ add_custom_target(
     DEPENDS
         "${RV32_VIRT_DTB}")
 
-function(rv32_enable_warnings target)
+set(
+    RV64_GENERATED_IMAGE_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/images")
+set(
+    RV64_VIRT_DTB
+    "${RV64_GENERATED_IMAGE_DIR}/rv64-virt.dtb")
+
+add_custom_command(
+    OUTPUT
+        "${RV64_VIRT_DTB}"
+    COMMAND
+        ${CMAKE_COMMAND} -E make_directory
+        "${RV64_GENERATED_IMAGE_DIR}"
+    COMMAND
+        "${RV_DTC}"
+        -I dts
+        -O dtb
+        -o
+        "${RV64_VIRT_DTB}"
+        "${PROJECT_SOURCE_DIR}/platform64/dts/rv64-virt.dts"
+    DEPENDS
+        platform64/dts/rv64-virt.dts
+    VERBATIM)
+
+add_custom_target(
+    rv64_device_tree
+    ALL
+    DEPENDS
+        "${RV64_VIRT_DTB}")
+
+function(rv_enable_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive-)
     else()
@@ -84,22 +114,22 @@ endfunction()
 
 add_library(
     rv32_core
-    core/src/core.cpp
-    core/src/csr.cpp
-    core/src/decode.cpp
-    core/src/execute.cpp
-    core/src/frontend.cpp
-    core/src/interrupt.cpp
-    core/src/mmu.cpp
-    core/src/trap.cpp)
+    core32/src/core.cpp
+    core32/src/csr.cpp
+    core32/src/decode.cpp
+    core32/src/execute.cpp
+    core32/src/frontend.cpp
+    core32/src/interrupt.cpp
+    core32/src/mmu.cpp
+    core32/src/trap.cpp)
 
 target_include_directories(
     rv32_core
     PUBLIC
-        ${PROJECT_SOURCE_DIR}/core/include)
+        ${PROJECT_SOURCE_DIR}/core32/include)
 
 target_link_libraries(rv32_core PUBLIC rv_common)
-rv32_enable_warnings(rv32_core)
+rv_enable_warnings(rv32_core)
 
 add_library(
     rv64_core
@@ -116,12 +146,11 @@ target_include_directories(
         ${PROJECT_SOURCE_DIR}/core64/include)
 
 target_link_libraries(rv64_core PUBLIC rv_common)
-rv32_enable_warnings(rv64_core)
+rv_enable_warnings(rv64_core)
 
 add_library(
-    rv32_platform
-    platform/src/machine.cpp
-    platform/src/system_bus.cpp
+    rv_system
+    common/src/system_bus.cpp
     devices/src/clint.cpp
     devices/src/framebuffer.cpp
     devices/src/plic.cpp
@@ -131,14 +160,30 @@ add_library(
     devices/src/virtio_block.cpp)
 
 target_include_directories(
+    rv_system
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/common/include
+        ${PROJECT_SOURCE_DIR}/devices/include)
+
+target_link_libraries(rv_system PUBLIC rv_common)
+rv_enable_warnings(rv_system)
+
+add_library(
+    rv32_platform
+    platform32/src/machine.cpp)
+
+target_include_directories(
     rv32_platform
     PUBLIC
-        ${PROJECT_SOURCE_DIR}/core/include
-        ${PROJECT_SOURCE_DIR}/devices/include
-        ${PROJECT_SOURCE_DIR}/platform/include)
+        ${PROJECT_SOURCE_DIR}/core32/include
+        ${PROJECT_SOURCE_DIR}/platform32/include)
 
-target_link_libraries(rv32_platform PUBLIC rv32_core)
-rv32_enable_warnings(rv32_platform)
+target_link_libraries(
+    rv32_platform
+    PUBLIC
+        rv32_core
+        rv_system)
+rv_enable_warnings(rv32_platform)
 
 add_library(
     rv64_platform
@@ -153,8 +198,8 @@ target_link_libraries(
     rv64_platform
     PUBLIC
         rv64_core
-        rv32_platform)
-rv32_enable_warnings(rv64_platform)
+        rv_system)
+rv_enable_warnings(rv64_platform)
 
 add_library(
     rv64_app
@@ -166,88 +211,98 @@ target_include_directories(
         ${PROJECT_SOURCE_DIR}/app/include)
 
 target_link_libraries(rv64_app PUBLIC rv64_platform)
-rv32_enable_warnings(rv64_app)
+rv_enable_warnings(rv64_app)
 
-if(RV32_ENABLE_SDL)
+if(RV_ENABLE_SDL)
     find_path(
-        RV32_SDL2_INCLUDE_DIR
+        RV_SDL2_INCLUDE_DIR
         NAMES SDL.h
         HINTS
             "C:/msys64/ucrt64/include"
         PATH_SUFFIXES SDL2)
     find_library(
-        RV32_SDL2_LIBRARY
+        RV_SDL2_LIBRARY
         NAMES SDL2
         HINTS
             "C:/msys64/ucrt64/lib")
-    if(NOT RV32_SDL2_INCLUDE_DIR OR NOT RV32_SDL2_LIBRARY)
+    if(NOT RV_SDL2_INCLUDE_DIR OR NOT RV_SDL2_LIBRARY)
         message(
             FATAL_ERROR
             "M7 requires the SDL2 development library")
     endif()
 
     add_library(
-        rv32_app
+        rv_app
         app/src/sdl_frontend.cpp
         app/src/terminal_console.cpp)
 
     target_include_directories(
-        rv32_app
+        rv_app
         PUBLIC
             ${PROJECT_SOURCE_DIR}/app/include
         PRIVATE
-            ${RV32_SDL2_INCLUDE_DIR})
+            ${RV_SDL2_INCLUDE_DIR})
     target_compile_definitions(
-        rv32_app
+        rv_app
         PRIVATE
             SDL_MAIN_HANDLED)
     target_link_libraries(
-        rv32_app
+        rv_app
         PUBLIC
-            rv32_platform
+            rv_system
         PRIVATE
-            ${RV32_SDL2_LIBRARY})
-    rv32_enable_warnings(rv32_app)
+            ${RV_SDL2_LIBRARY})
+    rv_enable_warnings(rv_app)
+
+    target_compile_definitions(
+        rv64_app
+        PRIVATE
+            RV_ENABLE_SDL=1)
+    target_link_libraries(
+        rv64_app
+        PRIVATE
+            rv_app)
 endif()
 
 add_executable(
-    rv32_emulator
+    riscv_emulator
     app/main.cpp)
 
-if(RV32_ENABLE_SDL)
-    target_link_libraries(rv32_emulator PRIVATE rv32_app rv64_app)
+if(RV_ENABLE_SDL)
+    target_link_libraries(riscv_emulator PRIVATE rv_app rv32_platform rv64_app)
     target_compile_definitions(
-        rv32_emulator
+        riscv_emulator
         PRIVATE
-            RV32_ENABLE_SDL=1)
+            RV_ENABLE_SDL=1)
 else()
-    target_link_libraries(rv32_emulator PRIVATE rv32_platform rv64_app)
+    target_link_libraries(riscv_emulator PRIVATE rv32_platform rv64_app)
 endif()
-rv32_enable_warnings(rv32_emulator)
-add_dependencies(rv32_emulator rv32_device_tree)
+rv_enable_warnings(riscv_emulator)
+add_dependencies(riscv_emulator rv32_device_tree)
+add_dependencies(riscv_emulator rv64_device_tree)
 
-if(WIN32 AND RV32_ENABLE_SDL)
+if(WIN32 AND RV_ENABLE_SDL)
     find_file(
-        RV32_SDL2_RUNTIME
+        RV_SDL2_RUNTIME
         NAMES SDL2.dll
         HINTS
             "C:/msys64/ucrt64/bin")
-    if(NOT RV32_SDL2_RUNTIME)
+    if(NOT RV_SDL2_RUNTIME)
         message(
             FATAL_ERROR
             "M7 requires SDL2.dll at runtime")
     endif()
     add_custom_command(
-        TARGET rv32_emulator
+        TARGET riscv_emulator
         POST_BUILD
         COMMAND
             ${CMAKE_COMMAND} -E copy_if_different
-            "${RV32_SDL2_RUNTIME}"
-            "$<TARGET_FILE_DIR:rv32_emulator>"
+            "${RV_SDL2_RUNTIME}"
+            "$<TARGET_FILE_DIR:riscv_emulator>"
         VERBATIM)
 endif()
 
-if(RV32_BUILD_TESTS)
+if(RV_BUILD_TESTS)
     enable_testing()
 
     add_executable(
@@ -259,7 +314,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_core)
 
-    rv32_enable_warnings(rv64_core_tests)
+    rv_enable_warnings(rv64_core_tests)
 
     add_test(
         NAME rv64_core_tests
@@ -274,7 +329,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_core)
 
-    rv32_enable_warnings(rv64_m_extension_tests)
+    rv_enable_warnings(rv64_m_extension_tests)
 
     add_test(
         NAME rv64_m_extension_tests
@@ -289,7 +344,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_platform)
 
-    rv32_enable_warnings(rv64_atomic_extension_tests)
+    rv_enable_warnings(rv64_atomic_extension_tests)
 
     add_test(
         NAME rv64_atomic_extension_tests
@@ -304,7 +359,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_core)
 
-    rv32_enable_warnings(rv64_compressed_extension_tests)
+    rv_enable_warnings(rv64_compressed_extension_tests)
 
     add_test(
         NAME rv64_compressed_extension_tests
@@ -319,7 +374,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_core)
 
-    rv32_enable_warnings(rv64_privileged_tests)
+    rv_enable_warnings(rv64_privileged_tests)
 
     add_test(
         NAME rv64_privileged_tests
@@ -334,7 +389,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_core)
 
-    rv32_enable_warnings(rv64_mmu_tests)
+    rv_enable_warnings(rv64_mmu_tests)
 
     add_test(
         NAME rv64_mmu_tests
@@ -349,7 +404,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_platform)
 
-    rv32_enable_warnings(rv64_architecture_runner)
+    rv_enable_warnings(rv64_architecture_runner)
 
     add_executable(
         rv64_platform_tests
@@ -360,46 +415,55 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv64_platform)
 
-    rv32_enable_warnings(rv64_platform_tests)
+    rv_enable_warnings(rv64_platform_tests)
 
     add_test(
         NAME rv64_platform_tests
         COMMAND rv64_platform_tests)
 
     find_program(
-        RV32_FDTGET
+        RV_FDTGET
         NAMES fdtget
         HINTS
             "C:/msys64/ucrt64/bin")
-    if(NOT RV32_FDTGET)
+    if(NOT RV_FDTGET)
         message(
             FATAL_ERROR
             "M5 tests require fdtget")
     endif()
 
     add_test(
-        NAME rv32_emulator_smoke
-        COMMAND rv32_emulator)
+        NAME rv32_cli_smoke
+        COMMAND riscv_emulator)
 
     add_test(
-        NAME rv64_emulator_smoke
-        COMMAND rv32_emulator --cpu rv64)
+        NAME rv64_cli_smoke
+        COMMAND riscv_emulator --cpu rv64)
 
     add_test(
         NAME rv32_device_tree_smoke
         COMMAND
             ${CMAKE_COMMAND}
             "-DDTB=${RV32_VIRT_DTB}"
-            "-DFDTGET=${RV32_FDTGET}"
+            "-DFDTGET=${RV_FDTGET}"
             -P
             "${PROJECT_SOURCE_DIR}/tests/cmake/verify_device_tree.cmake")
+
+    add_test(
+        NAME rv64_device_tree_smoke
+        COMMAND
+            ${CMAKE_COMMAND}
+            "-DDTB=${RV64_VIRT_DTB}"
+            "-DFDTGET=${RV_FDTGET}"
+            -P
+            "${PROJECT_SOURCE_DIR}/tests/cmake/verify_rv64_device_tree.cmake")
 
     add_executable(
         rv32_framework_tests
         tests/framework_tests.cpp)
 
     target_link_libraries(rv32_framework_tests PRIVATE rv32_platform)
-    rv32_enable_warnings(rv32_framework_tests)
+    rv_enable_warnings(rv32_framework_tests)
 
     add_test(
         NAME rv32_framework_tests
@@ -414,7 +478,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_decode_tests)
+    rv_enable_warnings(rv32_decode_tests)
 
     add_test(
         NAME rv32_decode_tests
@@ -429,7 +493,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_instruction_decode_tests)
+    rv_enable_warnings(rv32_instruction_decode_tests)
 
     add_test(
         NAME rv32_instruction_decode_tests
@@ -444,13 +508,13 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_compressed_extension_tests)
+    rv_enable_warnings(rv32_compressed_extension_tests)
 
     add_test(
         NAME rv32_compressed_extension_tests
         COMMAND rv32_compressed_extension_tests)
 
-    if(RV32_ENABLE_SDL)
+    if(RV_ENABLE_SDL)
         add_executable(
             rv32_terminal_console_tests
             tests/terminal_console_tests.cpp)
@@ -458,8 +522,8 @@ if(RV32_BUILD_TESTS)
         target_link_libraries(
             rv32_terminal_console_tests
             PRIVATE
-                rv32_app)
-        rv32_enable_warnings(rv32_terminal_console_tests)
+                rv_app)
+        rv_enable_warnings(rv32_terminal_console_tests)
 
         add_test(
             NAME rv32_terminal_console_tests
@@ -472,7 +536,7 @@ if(RV32_BUILD_TESTS)
         target_include_directories(
             rv32_sdl_frontend_tests
             PRIVATE
-                ${RV32_SDL2_INCLUDE_DIR})
+                ${RV_SDL2_INCLUDE_DIR})
         target_compile_definitions(
             rv32_sdl_frontend_tests
             PRIVATE
@@ -480,9 +544,9 @@ if(RV32_BUILD_TESTS)
         target_link_libraries(
             rv32_sdl_frontend_tests
             PRIVATE
-                rv32_app
-                ${RV32_SDL2_LIBRARY})
-        rv32_enable_warnings(rv32_sdl_frontend_tests)
+                rv_app
+                ${RV_SDL2_LIBRARY})
+        rv_enable_warnings(rv32_sdl_frontend_tests)
 
         add_test(
             NAME rv32_sdl_frontend_tests
@@ -498,7 +562,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_frontend_tests)
+    rv_enable_warnings(rv32_frontend_tests)
 
     add_test(
         NAME rv32_frontend_tests
@@ -513,7 +577,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_execute_tests)
+    rv_enable_warnings(rv32_execute_tests)
 
     add_test(
         NAME rv32_execute_tests
@@ -528,7 +592,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_m_extension_tests)
+    rv_enable_warnings(rv32_m_extension_tests)
 
     add_test(
         NAME rv32_m_extension_tests
@@ -543,7 +607,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_platform)
 
-    rv32_enable_warnings(rv32_atomic_extension_tests)
+    rv_enable_warnings(rv32_atomic_extension_tests)
 
     add_test(
         NAME rv32_atomic_extension_tests
@@ -558,7 +622,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_platform)
 
-    rv32_enable_warnings(rv32_csr_extension_tests)
+    rv_enable_warnings(rv32_csr_extension_tests)
 
     add_test(
         NAME rv32_csr_extension_tests
@@ -573,7 +637,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_control_flow_tests)
+    rv_enable_warnings(rv32_control_flow_tests)
 
     add_test(
         NAME rv32_control_flow_tests
@@ -588,7 +652,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_memory_tests)
+    rv_enable_warnings(rv32_memory_tests)
 
     add_test(
         NAME rv32_memory_tests
@@ -603,7 +667,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_core_step_tests)
+    rv_enable_warnings(rv32_core_step_tests)
 
     add_test(
         NAME rv32_core_step_tests
@@ -618,7 +682,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_trap_tests)
+    rv_enable_warnings(rv32_trap_tests)
 
     add_test(
         NAME rv32_trap_tests
@@ -633,7 +697,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_supervisor_trap_tests)
+    rv_enable_warnings(rv32_supervisor_trap_tests)
 
     add_test(
         NAME rv32_supervisor_trap_tests
@@ -648,7 +712,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_platform)
 
-    rv32_enable_warnings(rv32_interrupt_tests)
+    rv_enable_warnings(rv32_interrupt_tests)
 
     add_test(
         NAME rv32_interrupt_tests
@@ -663,7 +727,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_core)
 
-    rv32_enable_warnings(rv32_mmu_tests)
+    rv_enable_warnings(rv32_mmu_tests)
 
     add_test(
         NAME rv32_mmu_tests
@@ -678,7 +742,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_platform)
 
-    rv32_enable_warnings(rv32_performance_runner)
+    rv_enable_warnings(rv32_performance_runner)
 
     add_test(
         NAME rv32_performance_smoke
@@ -698,7 +762,7 @@ if(RV32_BUILD_TESTS)
         PRIVATE
             rv32_platform)
 
-    rv32_enable_warnings(rv32_framebuffer_benchmark)
+    rv_enable_warnings(rv32_framebuffer_benchmark)
 
     add_test(
         NAME rv32_framebuffer_performance_smoke
@@ -729,7 +793,7 @@ if(RV32_BUILD_TESTS)
 
         set(
             RV32_BAREMETAL_OUTPUT_DIR
-            "${CMAKE_CURRENT_BINARY_DIR}/baremetal")
+            "${CMAKE_CURRENT_BINARY_DIR}/baremetal32")
         set(
             RV32_BAREMETAL_ELF
             "${RV32_BAREMETAL_OUTPUT_DIR}/smoke.elf")
@@ -769,13 +833,13 @@ if(RV32_BUILD_TESTS)
                 -msmall-data-limit=0
                 -nostdlib
                 -nostartfiles
-                "-Wl,-T,${PROJECT_SOURCE_DIR}/tests/baremetal/link.ld"
+                "-Wl,-T,${PROJECT_SOURCE_DIR}/tests/baremetal32/link.ld"
                 -Wl,--gc-sections
                 -Wl,--no-relax
                 -o
                 "${RV32_BAREMETAL_ELF}"
-                "${PROJECT_SOURCE_DIR}/tests/baremetal/start.S"
-                "${PROJECT_SOURCE_DIR}/tests/baremetal/main.c"
+                "${PROJECT_SOURCE_DIR}/tests/baremetal32/start.S"
+                "${PROJECT_SOURCE_DIR}/tests/baremetal32/main.c"
                 -lgcc
             COMMAND
                 "${RV32_BAREMETAL_OBJCOPY}"
@@ -784,9 +848,9 @@ if(RV32_BUILD_TESTS)
                 "${RV32_BAREMETAL_ELF}"
                 "${RV32_BAREMETAL_BIN}"
             DEPENDS
-                tests/baremetal/link.ld
-                tests/baremetal/start.S
-                tests/baremetal/main.c
+                tests/baremetal32/link.ld
+                tests/baremetal32/start.S
+                tests/baremetal32/main.c
             VERBATIM)
 
         add_custom_target(
@@ -810,12 +874,12 @@ if(RV32_BUILD_TESTS)
                 -nostdlib
                 -nostartfiles
                 -mno-relax
-                "-Wl,-T,${PROJECT_SOURCE_DIR}/tests/baremetal/link.ld"
+                "-Wl,-T,${PROJECT_SOURCE_DIR}/tests/baremetal32/link.ld"
                 -Wl,--gc-sections
                 -Wl,--no-relax
                 -o
                 "${RV32_COMPRESSED_ELF}"
-                "${PROJECT_SOURCE_DIR}/tests/baremetal/compressed_smoke.S"
+                "${PROJECT_SOURCE_DIR}/tests/baremetal32/compressed_smoke.S"
             COMMAND
                 "${RV32_BAREMETAL_OBJCOPY}"
                 -O
@@ -823,8 +887,8 @@ if(RV32_BUILD_TESTS)
                 "${RV32_COMPRESSED_ELF}"
                 "${RV32_COMPRESSED_BIN}"
             DEPENDS
-                tests/baremetal/link.ld
-                tests/baremetal/compressed_smoke.S
+                tests/baremetal32/link.ld
+                tests/baremetal32/compressed_smoke.S
             VERBATIM)
 
         add_custom_target(
@@ -847,11 +911,11 @@ if(RV32_BUILD_TESTS)
                 -mabi=ilp32
                 -nostdlib
                 -nostartfiles
-                "-Wl,-T,${PROJECT_SOURCE_DIR}/tests/baremetal/link.ld"
+                "-Wl,-T,${PROJECT_SOURCE_DIR}/tests/baremetal32/link.ld"
                 -Wl,--no-relax
                 -o
                 "${RV32_BOOT_SMOKE_ELF}"
-                "${PROJECT_SOURCE_DIR}/tests/boot/console_shutdown.S"
+                "${PROJECT_SOURCE_DIR}/tests/boot32/console_shutdown.S"
             COMMAND
                 "${RV32_BAREMETAL_OBJCOPY}"
                 -O
@@ -859,8 +923,8 @@ if(RV32_BUILD_TESTS)
                 "${RV32_BOOT_SMOKE_ELF}"
                 "${RV32_BOOT_SMOKE_BIN}"
             DEPENDS
-                tests/baremetal/link.ld
-                tests/boot/console_shutdown.S
+                tests/baremetal32/link.ld
+                tests/boot32/console_shutdown.S
             VERBATIM)
 
         add_custom_target(
@@ -871,39 +935,39 @@ if(RV32_BUILD_TESTS)
 
         add_executable(
             rv32_baremetal_runner
-            tests/baremetal/runner.cpp)
+            tests/baremetal32/runner.cpp)
 
         target_link_libraries(
             rv32_baremetal_runner
             PRIVATE
                 rv32_platform)
 
-        rv32_enable_warnings(rv32_baremetal_runner)
+        rv_enable_warnings(rv32_baremetal_runner)
         add_dependencies(
             rv32_baremetal_runner
             rv32_baremetal_image
             rv32_compressed_image)
         add_dependencies(
-            rv32_emulator
+            riscv_emulator
             rv32_baremetal_image
             rv32_boot_smoke_image
             rv32_compressed_image)
 
         add_executable(
             rv32_architecture_runner
-            tests/architecture/runner.cpp)
+            tests/architecture32/runner.cpp)
         target_link_libraries(
             rv32_architecture_runner
             PRIVATE
                 rv32_platform)
-        rv32_enable_warnings(rv32_architecture_runner)
+        rv_enable_warnings(rv32_architecture_runner)
 
         set(
             RV32_RISCV_TESTS_DIR
             "${PROJECT_SOURCE_DIR}/third_party/riscv-tests")
         set(
             RV32_ARCHITECTURE_OUTPUT_DIR
-            "${CMAKE_CURRENT_BINARY_DIR}/architecture")
+            "${CMAKE_CURRENT_BINARY_DIR}/architecture32")
         file(
             GLOB_RECURSE
             RV32_ARCHITECTURE_SUPPORT_FILES
@@ -913,7 +977,7 @@ if(RV32_BUILD_TESTS)
         list(
             APPEND
             RV32_ARCHITECTURE_SUPPORT_FILES
-            "${PROJECT_SOURCE_DIR}/tests/architecture/link.ld")
+            "${PROJECT_SOURCE_DIR}/tests/architecture32/link.ld")
         if(CMAKE_GENERATOR MATCHES "Ninja")
             set_property(
                 GLOBAL
@@ -994,7 +1058,7 @@ if(RV32_BUILD_TESTS)
                         -mno-relax
                         "-I${RV32_RISCV_TESTS_DIR}/env/p"
                         "-I${RV32_RISCV_TESTS_DIR}/isa/macros/scalar"
-                        "-T${PROJECT_SOURCE_DIR}/tests/architecture/link.ld"
+                        "-T${PROJECT_SOURCE_DIR}/tests/architecture32/link.ld"
                         -Wl,--no-relax
                         "${test_source}"
                         -o
@@ -1151,7 +1215,7 @@ if(RV32_BUILD_TESTS)
         add_test(
             NAME rv32_boot_image_loader_smoke
             COMMAND
-                rv32_emulator
+                riscv_emulator
                 --load-images
                 "${RV32_BAREMETAL_BIN}"
                 "${RV32_BAREMETAL_BIN}"
@@ -1160,7 +1224,7 @@ if(RV32_BUILD_TESTS)
         add_test(
             NAME rv32_boot_run_smoke
             COMMAND
-                rv32_emulator
+                riscv_emulator
                 --boot
                 "${RV32_BOOT_SMOKE_BIN}"
                 "${RV32_BAREMETAL_BIN}"
@@ -1171,11 +1235,11 @@ if(RV32_BUILD_TESTS)
             PROPERTIES
                 PASS_REGULAR_EXPRESSION "OK")
 
-        if(RV32_ENABLE_SDL)
+        if(RV_ENABLE_SDL)
             add_test(
                 NAME rv32_gui_boot_smoke
                 COMMAND
-                    rv32_emulator
+                    riscv_emulator
                     --gui
                     --boot
                     "${RV32_BOOT_SMOKE_BIN}"
@@ -1184,6 +1248,25 @@ if(RV32_BUILD_TESTS)
                     100)
             set_tests_properties(
                 rv32_gui_boot_smoke
+                PROPERTIES
+                    ENVIRONMENT
+                        "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software"
+                    PASS_REGULAR_EXPRESSION "OK")
+
+            add_test(
+                NAME rv64_gui_boot_smoke
+                COMMAND
+                    riscv_emulator
+                    --cpu
+                    rv64
+                    --gui
+                    --boot
+                    "${RV32_BOOT_SMOKE_BIN}"
+                    "${RV32_BAREMETAL_BIN}"
+                    "${RV64_VIRT_DTB}"
+                    100)
+            set_tests_properties(
+                rv64_gui_boot_smoke
                 PROPERTIES
                     ENVIRONMENT
                         "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software"
@@ -1202,7 +1285,7 @@ if(RV32_BUILD_TESTS)
         add_test(
             NAME rv32_boot_disk_smoke
             COMMAND
-                rv32_emulator
+                riscv_emulator
                 --boot-disk
                 "${RV32_BOOT_SMOKE_BIN}"
                 "${RV32_BAREMETAL_BIN}"
@@ -1214,5 +1297,23 @@ if(RV32_BUILD_TESTS)
             PROPERTIES
                 PASS_REGULAR_EXPRESSION
                     "Virtual disk loaded")
+
+        add_test(
+            NAME rv64_boot_disk_smoke
+            COMMAND
+                riscv_emulator
+                --cpu
+                rv64
+                --boot-disk
+                "${RV32_BOOT_SMOKE_BIN}"
+                "${RV32_BAREMETAL_BIN}"
+                "${RV64_VIRT_DTB}"
+                "${RV32_TEST_DISK}"
+                100)
+        set_tests_properties(
+            rv64_boot_disk_smoke
+            PROPERTIES
+                PASS_REGULAR_EXPRESSION
+                    "RV64 virtual disk loaded")
     endif()
 endif()

@@ -1,6 +1,6 @@
-#include "rv32/devices/syscon.hpp"
+#include "rv/devices/syscon.hpp"
 
-namespace rv32::devices {
+namespace rv::devices {
 
 Syscon::Syscon(PhysAddr base, std::uint64_t size)
     : range_{.base = base, .size = size}
@@ -56,4 +56,4 @@ void Syscon::clear_action() noexcept
     action_ = SystemAction::None;
 }
 
-} // namespace rv32::devices
+} // namespace rv::devices

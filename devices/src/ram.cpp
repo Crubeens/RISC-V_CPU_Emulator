@@ -1,12 +1,12 @@
-#include "rv32/devices/ram.hpp"
+#include "rv/devices/ram.hpp"
 
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
 
-#include "rv32/platform/endian.hpp"
+#include "rv/platform/endian.hpp"
 
-namespace rv32::devices {
+namespace rv::devices {
 
 Ram::Ram(PhysAddr base, std::uint64_t size)
     : range_{.base = base, .size = size}
@@ -71,4 +71,4 @@ std::span<const std::uint8_t> Ram::bytes() const noexcept
     return data_;
 }
 
-} // namespace rv32::devices
+} // namespace rv::devices

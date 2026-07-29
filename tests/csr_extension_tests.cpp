@@ -8,8 +8,8 @@
 #include "rv32/core/csr.hpp"
 #include "rv32/core/execute.hpp"
 #include "rv32/core/trap.hpp"
-#include "rv32/devices/ram.hpp"
-#include "rv32/platform/system_bus.hpp"
+#include "rv/devices/ram.hpp"
+#include "rv/platform/system_bus.hpp"
 
 namespace {
 
@@ -164,7 +164,7 @@ class TestCsrAccess final : public rv32::CsrAccess {
     rv32::CsrAddress implemented_address_{};
 };
 
-class FixedTimeSource final : public rv32::platform::TimeSource {
+class FixedTimeSource final : public rv::platform::TimeSource {
   public:
     explicit FixedTimeSource(std::uint64_t value) noexcept
         : value_(value)
@@ -591,7 +591,7 @@ void test_csr_commit_validation_is_atomic()
 
 void test_zicntr_direct_values()
 {
-    rv32::platform::SystemBus bus;
+    rv::platform::SystemBus bus;
     FixedTimeSource time_source(0xFEDCBA9876543210ULL);
     bus.set_time_source(&time_source);
 
@@ -649,9 +649,9 @@ void test_zicntr_direct_values()
 
 void test_zicntr_flows_through_core_step()
 {
-    rv32::platform::SystemBus bus;
+    rv::platform::SystemBus bus;
     static_cast<void>(
-        bus.emplace_device<rv32::devices::Ram>(
+        bus.emplace_device<rv::devices::Ram>(
             ram_base,
             0x1000U));
     FixedTimeSource time_source(0xFEDCBA9876543210ULL);
@@ -715,9 +715,9 @@ void test_illegal_csr_access_is_precise_in_core_step()
     };
 
     for (const std::uint32_t instruction : illegal_instructions) {
-        rv32::platform::SystemBus bus;
+        rv::platform::SystemBus bus;
         static_cast<void>(
-            bus.emplace_device<rv32::devices::Ram>(
+            bus.emplace_device<rv::devices::Ram>(
                 ram_base,
                 0x1000U));
         CHECK(
@@ -759,9 +759,9 @@ void test_illegal_csr_access_is_precise_in_core_step()
 
 void test_fence_i_with_self_modifying_code()
 {
-    rv32::platform::SystemBus bus;
+    rv::platform::SystemBus bus;
     static_cast<void>(
-        bus.emplace_device<rv32::devices::Ram>(
+        bus.emplace_device<rv::devices::Ram>(
             ram_base,
             0x1000U));
 

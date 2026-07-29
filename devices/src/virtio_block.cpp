@@ -1,13 +1,13 @@
-#include "rv32/devices/virtio_block.hpp"
+#include "rv/devices/virtio_block.hpp"
 
 #include <array>
 #include <limits>
 #include <stdexcept>
 #include <vector>
 
-#include "rv32/platform/endian.hpp"
+#include "rv/platform/endian.hpp"
 
-namespace rv32::devices {
+namespace rv::devices {
 
 namespace {
 
@@ -631,4 +631,4 @@ bool VirtioBlock::queue_configured() const noexcept
            is_power_of_two(queue_align_);
 }
 
-} // namespace rv32::devices
+} // namespace rv::devices

@@ -1,0 +1,30 @@
+{
+    "C_Cpp.default.compilerPath": "C:/msys64/ucrt64/bin/c++.exe",
+    "C_Cpp.default.cppStandard": "c++20",
+    "C_Cpp.default.cStandard": "c17",
+    "C_Cpp.default.intelliSenseMode": "windows-gcc-x64",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/common/include",
+        "${workspaceFolder}/core32/include",
+        "${workspaceFolder}/core64/include",
+        "${workspaceFolder}/devices/include",
+        "${workspaceFolder}/platform32/include",
+        "${workspaceFolder}/platform64/include",
+        "${workspaceFolder}/app/include",
+        "C:/msys64/ucrt64/include"
+    ],
+    "C_Cpp.default.defines": [
+        "RV_ENABLE_SDL=1"
+    ],
+    "clangd.path": "C:/msys64/ucrt64/bin/clangd.exe",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build/debug",
+        "--background-index",
+        "--header-insertion=never"
+    ],
+    "cmake.configureOnOpen": true,
+    "cmake.buildDirectory": "${workspaceFolder}/build/debug",
+    "cmake.generator": "Ninja"
+}

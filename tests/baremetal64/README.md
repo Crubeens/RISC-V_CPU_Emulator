@@ -20,7 +20,7 @@ riscv64-linux-gnu-objcopy \
 Run it from PowerShell:
 
 ```powershell
-.\build\debug\rv32_emulator.exe --cpu rv64 --run-raw `
+.\build\debug\riscv_emulator.exe --cpu rv64 --run-raw `
   .\build\debug\baremetal64\smoke.bin 1000
 ```
 
@@ -56,3 +56,13 @@ A/D updates are covered by `rv64_mmu_tests`, because the fixed Spike profile
 uses fault-on-clear A/D behavior. The accepted output names are
 `build/debug/architecture64/rv64priv-m6-sv39.elf` and
 `rv64priv-m6-sv39.bin`.
+
+For RV64-M7, `tests/boot64/opensbi_smode_smoke.S` is linked at
+`0x80400000` and used as the S-mode next-stage image for the real RV64
+OpenSBI boot smoke. It verifies the OpenSBI boot arguments, prints through
+the legacy SBI console service, and requests shutdown through the SBI system
+reset extension. The generated files are placed in `build/<config>/boot64/`.
+
+The complete Linux acceptance path uses the persistent images in
+`boot-images/` and the generated `build/<config>/images/rv64-virt.dtb`.
+See `docs/启动命令.txt` for the exact command.

@@ -14,7 +14,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "RV32_BUILD_TESTS": "ON"
+        "RV_BUILD_TESTS": "ON"
       }
     },
     {
@@ -24,7 +24,7 @@
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "RV32_BUILD_TESTS": "ON"
+        "RV_BUILD_TESTS": "ON"
       }
     }
   ],

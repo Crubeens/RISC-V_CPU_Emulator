@@ -27,6 +27,6 @@ inline constexpr rv::PhysAddr framebuffer_base = 0x40000000ULL;
 
 inline constexpr rv::PhysAddr dram_base = 0x80000000ULL;
 inline constexpr std::uint64_t default_dram_size =
-    64ULL * 1024ULL * 1024ULL;
+    256ULL * 1024ULL * 1024ULL;
 
 } // namespace rv64::platform::address_map

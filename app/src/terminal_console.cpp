@@ -1,8 +1,8 @@
-#include "rv32/app/terminal_console.hpp"
+#include "rv/app/terminal_console.hpp"
 
 #include <algorithm>
 
-namespace rv32::app {
+namespace rv::app {
 
 TerminalConsole::TerminalConsole()
 {
@@ -281,4 +281,4 @@ void TerminalConsole::finish_control_sequence(
     dirty_ = true;
 }
 
-} // namespace rv32::app
+} // namespace rv::app

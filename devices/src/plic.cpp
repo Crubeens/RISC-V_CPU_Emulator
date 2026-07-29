@@ -1,8 +1,8 @@
-#include "rv32/devices/plic.hpp"
+#include "rv/devices/plic.hpp"
 
 #include <algorithm>
 
-namespace rv32::devices {
+namespace rv::devices {
 
 Plic::Plic(PhysAddr base, std::uint64_t size)
     : range_{.base = base, .size = size}
@@ -304,4 +304,4 @@ void Plic::complete(
     }
 }
 
-} // namespace rv32::devices
+} // namespace rv::devices

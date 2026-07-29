@@ -1,4 +1,4 @@
-#include "rv32/app/sdl_frontend.hpp"
+#include "rv/app/sdl_frontend.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -11,10 +11,10 @@
 #include <SDL.h>
 
 #include "font8x8_basic.hpp"
-#include "rv32/app/terminal_console.hpp"
-#include "rv32/devices/framebuffer.hpp"
+#include "rv/app/terminal_console.hpp"
+#include "rv/devices/framebuffer.hpp"
 
-namespace rv32::app {
+namespace rv::app {
 
 namespace {
 
@@ -951,4 +951,4 @@ void SdlFrontend::present(devices::Framebuffer* framebuffer)
     impl_->present(framebuffer);
 }
 
-} // namespace rv32::app
+} // namespace rv::app

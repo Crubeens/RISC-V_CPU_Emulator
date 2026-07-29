@@ -8,7 +8,7 @@
 
 ## 解耦边界
 
-- RV32 CPU 保持在现有 `core/`，命名空间为 `rv32`。
+- RV32 CPU 保持在 `core32/`，命名空间为 `rv32`。
 - RV64 CPU 保持在 `core64/`，命名空间为 `rv64`。
 - 两套 CPU 分别拥有寄存器、译码、执行、CSR、Trap、MMU、缓存和测试。
 - RV64 不包含 RV32 的 `core.hpp`、`decode.hpp`、`execute.hpp`、`mmu.hpp`
@@ -122,11 +122,17 @@ Spike 提交轨迹及 Debug/Release、RV32 全量回归验收。
 
 ## RV64-M7：OpenSBI、Linux 与差分验收
 
+状态：已完成并通过 RV64 OpenSBI、Linux 6.12.96、LP64 Buildroot ext4、
+UART、Framebuffer、虚拟磁盘回写及 Debug/Release 全量回归验收。
+
 内容：
 
 - 生成 RV64 DTB 与独立启动布局。
 - 编译并运行 RV64 OpenSBI、RV64 Linux 和 LP64 用户态。
-- 增加 Spike RV64 I/M/A/C 与特权差分。
+- 复用架构无关的 RAM、系统总线及外设实现，不依赖 RV32 平台。
+- 增加 RV64 `--boot`、`--boot-disk`、SDL、UART 输入和磁盘回写。
+- 将 RV32、RV64 目录和宿主程序命名整理为明确的双架构结构。
+- 保留 Spike RV64 I/M/A/C 与特权提交轨迹验收入口。
 
 验收：
 
@@ -134,6 +140,13 @@ Spike 提交轨迹及 Debug/Release、RV32 全量回归验收。
 - RV64 OpenSBI 输出平台信息并进入 S-mode。
 - RV64 Linux 挂载 VirtIO ext4、进入 Shell、UART/Framebuffer/关机正常。
 - RV32 与 RV64 Debug/Release、架构、差分和 Linux 启动测试全部通过。
+
+已验证软件组合：
+
+- OpenSBI v1.8.1 RV64 `fw_jump.bin`。
+- Linux v6.12.96 RV64IMAC，单 Hart、Sv39、无 F/D/V。
+- Buildroot 2025.02.16，RV64IMAC、LP64、musl、BusyBox、128 MiB ext4。
+- 虚拟 RAM 256 MiB，VirtIO 根磁盘可读写并在退出时回写。
 
 ## RV64-M8：性能与收尾
 

@@ -8,16 +8,16 @@
 #include <string>
 #include <vector>
 
-#include "rv32/devices/clint.hpp"
-#include "rv32/devices/framebuffer.hpp"
-#include "rv32/devices/plic.hpp"
-#include "rv32/devices/ram.hpp"
-#include "rv32/devices/syscon.hpp"
-#include "rv32/devices/uart16550.hpp"
-#include "rv32/devices/virtio_block.hpp"
+#include "rv/devices/clint.hpp"
+#include "rv/devices/framebuffer.hpp"
+#include "rv/devices/plic.hpp"
+#include "rv/devices/ram.hpp"
+#include "rv/devices/syscon.hpp"
+#include "rv/devices/uart16550.hpp"
+#include "rv/devices/virtio_block.hpp"
 #include "rv32/platform/address_map.hpp"
 #include "rv32/platform/machine.hpp"
-#include "rv32/platform/system_bus.hpp"
+#include "rv/platform/system_bus.hpp"
 
 namespace {
 
@@ -37,14 +37,14 @@ using rv32::AccessWidth;
 using rv32::AmoOperation;
 using rv32::BusFault;
 using rv32::PhysAddr;
-using rv32::platform::SystemBus;
+using rv::platform::SystemBus;
 
 void test_bus_ram_and_atomics()
 {
     constexpr PhysAddr ram_base = 0x80000000ULL;
     SystemBus bus;
     auto& ram =
-        bus.emplace_device<rv32::devices::Ram>(ram_base, 0x1000);
+        bus.emplace_device<rv::devices::Ram>(ram_base, 0x1000);
 
     CHECK(
         bus.write(
@@ -88,7 +88,7 @@ void test_bus_ram_and_atomics()
     bool overlap_rejected = false;
     try {
         static_cast<void>(
-            bus.emplace_device<rv32::devices::Ram>(
+            bus.emplace_device<rv::devices::Ram>(
                 ram_base + 0x800U,
                 0x100U));
     } catch (const std::invalid_argument&) {
@@ -145,7 +145,7 @@ void test_clint()
     constexpr PhysAddr base = 0x02000000ULL;
     SystemBus bus;
     auto& clint =
-        bus.emplace_device<rv32::devices::Clint>(base, 0x10000);
+        bus.emplace_device<rv::devices::Clint>(base, 0x10000);
     bus.set_time_source(&clint);
 
     CHECK(
@@ -183,7 +183,7 @@ void test_plic()
     constexpr PhysAddr base = 0x0C000000ULL;
     SystemBus bus;
     auto& plic =
-        bus.emplace_device<rv32::devices::Plic>(
+        bus.emplace_device<rv::devices::Plic>(
             base,
             0x04000000ULL);
 
@@ -253,15 +253,15 @@ void test_uart_syscon_and_framebuffer()
 
     SystemBus bus;
     auto& uart =
-        bus.emplace_device<rv32::devices::Uart16550>(
+        bus.emplace_device<rv::devices::Uart16550>(
             uart_base,
             0x100);
     auto& syscon =
-        bus.emplace_device<rv32::devices::Syscon>(
+        bus.emplace_device<rv::devices::Syscon>(
             syscon_base,
             0x1000);
     auto& framebuffer =
-        bus.emplace_device<rv32::devices::Framebuffer>(
+        bus.emplace_device<rv::devices::Framebuffer>(
             framebuffer_base,
             16,
             8,
@@ -295,15 +295,15 @@ void test_uart_syscon_and_framebuffer()
         bus.write(
             syscon_base,
             AccessWidth::Word,
-            rv32::devices::Syscon::poweroff_value,
+            rv::devices::Syscon::poweroff_value,
             AccessKind::Store) == BusFault::None);
     CHECK(
         syscon.requested_action() ==
-        rv32::devices::SystemAction::PowerOff);
+        rv::devices::SystemAction::PowerOff);
     syscon.clear_action();
     CHECK(
         syscon.requested_action() ==
-        rv32::devices::SystemAction::None);
+        rv::devices::SystemAction::None);
 
     CHECK(
         bus.write(
@@ -346,7 +346,7 @@ void test_framebuffer_rejects_overflowing_dimensions()
 {
     bool rejected = false;
     try {
-        rv32::devices::Framebuffer framebuffer(
+        rv::devices::Framebuffer framebuffer(
             0x40000000ULL,
             std::numeric_limits<std::uint32_t>::max(),
             std::numeric_limits<std::uint32_t>::max(),
@@ -375,11 +375,11 @@ void test_virtio_block_read()
 
     SystemBus bus;
     static_cast<void>(
-        bus.emplace_device<rv32::devices::Ram>(
+        bus.emplace_device<rv::devices::Ram>(
             ram_base,
             0x10000));
     auto& virtio =
-        bus.emplace_device<rv32::devices::VirtioBlock>(
+        bus.emplace_device<rv::devices::VirtioBlock>(
             virtio_base,
             0x1000,
             std::move(disk));

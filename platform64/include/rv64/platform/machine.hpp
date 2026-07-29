@@ -6,9 +6,9 @@
 #include "rv64/core/core.hpp"
 #include "rv64/platform/address_map.hpp"
 #include "rv64/platform/boot.hpp"
-#include "rv32/platform/system_bus.hpp"
+#include "rv/platform/system_bus.hpp"
 
-namespace rv32::devices {
+namespace rv::devices {
 class Clint;
 class Framebuffer;
 class Plic;
@@ -16,7 +16,7 @@ class Ram;
 class Syscon;
 class Uart16550;
 class VirtioBlock;
-} // namespace rv32::devices
+} // namespace rv::devices
 
 namespace rv64::platform {
 
@@ -49,27 +49,29 @@ class Machine {
 
     [[nodiscard]] Core& core() noexcept;
     [[nodiscard]] const Core& core() const noexcept;
-    [[nodiscard]] rv32::platform::SystemBus& bus() noexcept;
-    [[nodiscard]] const rv32::platform::SystemBus& bus() const noexcept;
+    [[nodiscard]] rv::platform::SystemBus& bus() noexcept;
+    [[nodiscard]] const rv::platform::SystemBus& bus() const noexcept;
 
-    [[nodiscard]] rv32::devices::Ram& ram() noexcept;
-    [[nodiscard]] rv32::devices::Clint& clint() noexcept;
-    [[nodiscard]] rv32::devices::Plic& plic() noexcept;
-    [[nodiscard]] rv32::devices::Uart16550& uart() noexcept;
-    [[nodiscard]] rv32::devices::VirtioBlock& virtio_block() noexcept;
+    [[nodiscard]] rv::devices::Ram& ram() noexcept;
+    [[nodiscard]] rv::devices::Clint& clint() noexcept;
+    [[nodiscard]] rv::devices::Plic& plic() noexcept;
+    [[nodiscard]] rv::devices::Uart16550& uart() noexcept;
+    [[nodiscard]] rv::devices::VirtioBlock& virtio_block() noexcept;
+    [[nodiscard]] rv::devices::Syscon& syscon() noexcept;
+    [[nodiscard]] rv::devices::Framebuffer* framebuffer() noexcept;
     [[nodiscard]] const IrqLines& irq_lines() const noexcept;
 
   private:
-    rv32::platform::SystemBus bus_;
+    rv::platform::SystemBus bus_;
     Core core_;
 
-    rv32::devices::Ram* ram_{};
-    rv32::devices::Clint* clint_{};
-    rv32::devices::Plic* plic_{};
-    rv32::devices::Uart16550* uart_{};
-    rv32::devices::VirtioBlock* virtio_block_{};
-    rv32::devices::Syscon* syscon_{};
-    rv32::devices::Framebuffer* framebuffer_{};
+    rv::devices::Ram* ram_{};
+    rv::devices::Clint* clint_{};
+    rv::devices::Plic* plic_{};
+    rv::devices::Uart16550* uart_{};
+    rv::devices::VirtioBlock* virtio_block_{};
+    rv::devices::Syscon* syscon_{};
+    rv::devices::Framebuffer* framebuffer_{};
     IrqLines irq_lines_{};
 };
 

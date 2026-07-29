@@ -1,12 +1,12 @@
-#include "rv32/devices/framebuffer.hpp"
+#include "rv/devices/framebuffer.hpp"
 
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
 
-#include "rv32/platform/endian.hpp"
+#include "rv/platform/endian.hpp"
 
-namespace rv32::devices {
+namespace rv::devices {
 
 Framebuffer::Framebuffer(
     PhysAddr base,
@@ -163,4 +163,4 @@ Framebuffer::statistics() const noexcept
     return statistics_;
 }
 
-} // namespace rv32::devices
+} // namespace rv::devices

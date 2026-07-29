@@ -1,1 +1,49 @@
+Linux、OpenSBI、Buildroot 与设备树配套说明
+==========================================
+
+本项目不把大型上游源码树放入 Git。外部软件在 WSL/Ubuntu 中独立编译，
+最终二进制复制到项目根目录 boot-images/；项目自己的 DTS 位于
+platform32/dts/ 和 platform64/dts/，构建时生成对应 DTB。
+
+一、固定版本
+
+- OpenSBI：v1.8.1
+  上游：https://github.com/riscv-software-src/opensbi
+- Linux：v6.12.96
+  上游：https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+- Buildroot：2025.02.16
+  上游：https://buildroot.org/download.html
+- Spike：固定提交记录见 tests/differential/SPIKE_REVISION.md
+  上游：https://github.com/riscv-software-src/riscv-isa-sim
+
+二、当前 RV32 镜像
+
+- boot-images/opensbi-v1.8.1-rv32-fw_jump.bin
+- boot-images/linux-v6.12.96-rv32ima-Image
+- boot-images/buildroot-2025.02.16-rv32ima-rootfs.ext4
+- build/<配置>/images/rv32-virt.dtb
+
+Linux/用户态目标：RV32IMA、ILP32、单 Hart、Sv32、无 F/D/V。
+
+三、当前 RV64 镜像
+
+- boot-images/opensbi-v1.8.1-rv64-fw_jump.bin
+- boot-images/linux-v6.12.96-rv64imac-Image
+- boot-images/rootfs-buildroot-v2025.02.16-rv64imac.ext4
+- build/<配置>/images/rv64-virt.dtb
+
+Linux/用户态目标：RV64IMAC、LP64、单 Hart、Sv39、无 F/D/V。
+Buildroot 使用 musl、BusyBox 和 128 MiB ext4 根文件系统。
+
+四、职责边界
+
+- OpenSBI 提供 M-mode 固件和 SBI 服务。
+- Linux 内核运行在 S-mode。
+- Buildroot 生成根文件系统和用户态程序，不是引导程序。
+- DTS/DTB 描述 RAM、CPU、UART、CLINT、PLIC、VirtIO、Framebuffer 和
+  Syscon 地址布局；必须与对应 platform32/ 或 platform64/ 常量一致。
+- boot-images/ 被 Git 忽略并作为持久外部产物保存；build/ 是可随时重建
+  的 CMake 输出目录。
+
+历史参考软件仓库：
 https://github.com/bane9/rv64gc-emu-software
