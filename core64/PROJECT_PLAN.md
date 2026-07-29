@@ -183,3 +183,9 @@ UART、Framebuffer、虚拟磁盘回写及 Debug/Release 全量回归验收。
 - 真实 OpenSBI v1.8.1 进入 S-mode、载荷打印成功并正常 SBI 关机。
 - RV32 Release 快速基准约 23.10 Msteps/s，未因 RV64 M8 发生代码路径退化。
 - Debug 与 Release 均为 102/102 通过。
+
+## M8 之后
+
+RV64-M1 至 M8 的计划和验收记录在此冻结。网络、RV64F/RV64D、Debian APT
+和资源扩展的唯一后续计划见
+[`RV64_M9_M11_PLAN.md`](RV64_M9_M11_PLAN.md)。

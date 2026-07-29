@@ -1,12 +1,12 @@
 # RISC-V32 CPU 模拟器项目最终计划书
 
-版本：1.1
+版本：1.2
 
 冻结日期：2026-07-24
 
-扩展日期：2026-07-28
+范围修订日期：2026-07-29
 
-状态：项目最终实施扩展基线
+状态：RV32 冻结计划与维护基线
 
 ## 1. 项目目标
 
@@ -16,10 +16,9 @@
 2. 可加载 OpenSBI、设备树和自行交叉编译的 Linux 内核。
 3. 可初始化并挂载 VirtIO 虚拟磁盘。
 4. UART 终端和 Framebuffer 图形界面。
-5. 通过 VirtIO 网络设备访问互联网。
-6. 提供可配置的大容量 RAM 和文件后端虚拟磁盘。
-7. 在解释器能力范围内提供流畅的 Framebuffer 显示，并明确区分宿主显示帧率与客户机软件渲染帧率。
-8. 可测试、可调试、可逐步扩展的模块化结构。
+5. 提供可配置的大容量 RAM 和文件后端虚拟磁盘。
+6. 在解释器能力范围内提供流畅的 Framebuffer 显示，并明确区分宿主显示帧率与客户机软件渲染帧率。
+7. 可测试、可调试、可逐步扩展的模块化结构。
 
 项目的核心工作限定为 CPU 及 CPU 面向虚拟硬件的稳定接口。RAM、UART、CLINT、PLIC、VirtIO、SYSCON、Framebuffer 和图形窗口采用经过验证的既有设计，经过适配后部署在平台层。
 
@@ -44,7 +43,6 @@
 - C 压缩指令扩展。
 - 小型 TLB。
 - SDL 图形窗口和键盘输入。
-- VirtIO Net 和无需管理员权限的用户态 NAT。
 - 可配置 RAM、文件后端大容量虚拟磁盘和动态设备树参数。
 - GDB Remote Stub。
 - 性能分析和指令执行优化。
@@ -57,33 +55,15 @@
 - Cache 一致性。
 - JIT、动态二进制翻译、3D GPU 和真实 GPU 直通；如果未来把 CPU-only 全屏 60 FPS 改成硬目标，必须重新评估并另行扩展计划。
 
-### 2.4 联网与系统级包管理的可兑现边界
+### 2.4 RV32 联网范围修订
 
-- “能联网”是最终硬目标：客户机必须获得 IP、默认路由和 DNS，能够主动发起 TCP/UDP 连接并通过 HTTPS 下载文件。
-- 当前 Buildroot 根文件系统只保留为启动和网络冒烟测试环境；Buildroot 官方不生成可供目标机在线安装的二进制包仓库，因此不作为最终包管理系统。
-- Debian、Ubuntu 和 Alpine 的官方公共仓库当前只提供 `riscv64`，没有与本项目 `RV32/ILP32` ABI 匹配的 `riscv32` 二进制源。不得把这些 `riscv64` 源写入 RV32 客户机。
-- M11 的正式方案采用 Yocto/OpenEmbedded 的 `qemuriscv32` 目标生成 RV32 用户态、包索引和项目自维护的软件源。Yocto 对 RV32 属于次级测试支持，必须在本模拟器上完成独立验收。
-- 主包管理方案固定为 `PACKAGE_CLASSES = "package_ipk"`、`IMAGE_FEATURES += "package-management"` 和 `opkg`。软件源由同一套 Yocto 配置交叉构建并通过 HTTP/HTTPS 发布，不依赖不存在的公共 RV32 发行版仓库。
-- 如果必须保留字面意义上的 `apt` 命令，允许用 Yocto 的 `package_deb` 生成项目自维护的 DEB 源；只有 `apt update/install/upgrade/remove` 在本模拟器中完成验证后才能启用。它不是 Debian/Ubuntu 官方源，也不承诺拥有 Debian 全量软件目录。
-- Yocto 还可生成 RPM/DNF 源，但第一版不采用该路线，以避免增加包管理器自身的资源和依赖负担。
-- 如果允许把 CPU 扩展为 RV64，则可直接采用 Debian/Ubuntu `riscv64` 仓库，但这会形成新的 CPU 架构项目，不纳入本计划。
-
-依据：
-
-- Debian 官方端口列表仅列出 `riscv64`：
-  <https://www.debian.org/ports/>
-- Ubuntu 官方支持架构仅列出 `riscv64`：
-  <https://documentation.ubuntu.com/project/how-ubuntu-is-made/concepts/supported-architectures/>
-- Alpine 官方架构矩阵仅列出 `riscv64`：
-  <https://wiki.alpinelinux.org/wiki/Include:Architecture_support_matrix>
-- Debian 的 RV32 页面只提供交叉编译说明和下游实验性 rootfs，不是官方二进制仓库：
-  <https://wiki.debian.org/RISC-V/32>
-- Buildroot 对二进制包管理的边界：
-  <https://buildroot.org/downloads/manual/manual.html#faq-no-binary-packages>
-- Yocto 5.3.2 将 RISC-V 32 位列为 `qemuriscv32` 次级测试目标：
-  <https://docs.yoctoproject.org/5.3.2/ref-manual/yocto-project-supported-features.html>
-- Yocto 运行时包管理、IPK/DEB/RPM 格式和软件源配置：
-  <https://docs.yoctoproject.org/scarthgap/dev-manual/packages.html>
+- RV32 保留现有 Linux、Buildroot、VirtIO Block、UART 和 Framebuffer 能力。
+- RV32 不再实施原 M11 的 Yocto/opkg、自维护软件源或 APT 路线；该路线无法
+  满足使用官方系统级软件源的最终目标。
+- 架构无关的 VirtIO Net 设备实现可以位于 `devices/`，但只由 RV64 平台
+  装配。RV32 Machine、DTS、内核配置和验收镜像保持不变。
+- 联网、Debian 官方仓库和 APT 的唯一实施主线见
+  [`core64/RV64_M9_M11_PLAN.md`](core64/RV64_M9_M11_PLAN.md)。
 
 ## 3. 不可破坏的架构边界
 
@@ -123,7 +103,7 @@ platform32/、platform64/
   各自的地址布局、整机装配、设备调度、设备树和镜像加载
 
 devices/
-  RAM、CLINT、PLIC、UART、VirtIO Block、VirtIO Net、SYSCON、Framebuffer
+  RAM、CLINT、PLIC、UART、VirtIO Block、VirtIO Net、RTC、SYSCON、Framebuffer
 
 app/
   统一命令行入口、宿主终端和 SDL GUI
@@ -132,7 +112,7 @@ tests/
   单元测试、架构测试、差分测试、Linux 集成测试
 ```
 
-原有 `docs/` 和 `prestudy/` 仅作为学习资料保留，不参与正式模块，也不修改其中已有文件。
+`prestudy/` 仅作为学习资料保留，不参与正式模块和后续计划维护。
 
 ## 5. 固定物理地址布局
 
@@ -142,7 +122,6 @@ tests/
 | PLIC | `0x0C000000` | 64 MiB 窗口 |
 | NS16550A UART | `0x10000000` | 256 B，IRQ 10 |
 | VirtIO Block | `0x10001000` | 4 KiB，IRQ 1 |
-| VirtIO Net | `0x10002000` | 4 KiB，IRQ 2；M11 增加 |
 | SYSCON | `0x11100000` | 4 KiB |
 | Framebuffer | `0x40000000` | 大小由分辨率决定 |
 | DRAM | `0x80000000` | 当前默认 64 MiB；M10 后默认 256 MiB，验证 512 MiB |
@@ -337,51 +316,15 @@ Linux Image 默认放置在 `0x80400000`，满足 RV32 内核 4 MiB 对齐要求
 - 加载 8 GiB 稀疏磁盘时，模拟器宿主常驻内存不会接近 8 GiB。
 - 越界、短读写、只读镜像、宿主 I/O 错误和异常退出有确定行为。
 
-### M11：VirtIO 网络、可联网用户态和系统级包管理
-
-方案：
-
-- 前端设备采用 Linux 原生支持的 VirtIO MMIO Net，地址 `0x10002000`、PLIC IRQ 2。
-- Windows 宿主后端采用 `libslirp` 用户态 NAT；无需 TAP、网桥、管理员权限或修改宿主网络设置。
-- Linux 内核启用 `CONFIG_VIRTIO_NET`；先用现有 Buildroot 环境验证 DHCP、DNS 和 HTTPS，再切换到 Yocto `qemuriscv32` 包管理镜像。
-- Yocto 镜像使用 RV32/ILP32、`package_ipk`、`package-management` 和 `opkg`，包含 DHCP 客户端、`ip`、DNS、CA 证书以及 `wget` 或 `curl`。
-- 同一 Yocto 构建生成 RV32 IPK 包与索引，发布为项目自维护的 HTTP/HTTPS 软件源；镜像预置与其 ABI、C 库和版本完全匹配的源配置。
-- `package_deb`/APT 作为兼容验证路线保留，但不是首个阻塞目标；禁止连接 Debian、Ubuntu 或 Alpine 的 `riscv64` 公共源。
-- 保留后端抽象，以后可增加 TAP 或端口转发，但不能让 CPU 依赖网络实现。
-
-Windows UCRT64 环境使用 MSYS2 的 `libslirp` 包：
-<https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libslirp>
-
-实现边界：
-
-- 第一版只实现单队列、基础收发、MAC、链路状态和必要 VirtIO 特性，不实现多队列、TSO、GSO、校验和卸载或零拷贝。
-- 第一版默认只允许客户机主动访问外网，不开放宿主入站端口。
-- 软件源必须由可复现的 Yocto 配置生成，包架构、ABI、C 库和内核用户接口必须一致；不得混装外部不兼容二进制包。
-- 第一版源只承诺项目实际构建和验收的软件集合，不承诺 Debian/Ubuntu 规模的软件目录。
-- 软件源发布目录与磁盘镜像均不提交 Git；仓库配置、配方、锁定版本、哈希和重建说明必须提交。
-- 网络数据到达只能通过设备队列和 PLIC 中断影响 CPU，网络线程不得直接修改 CPU 状态。
-
-验收：
-
-- Linux 识别 `virtio_net`，客户机通过 DHCP 获得地址、默认路由和 DNS。
-- 能解析域名，并通过 HTTP/HTTPS 下载固定测试文件并校验哈希。
-- Yocto RV32 镜像启动到 Shell，`opkg update` 能从项目软件源刷新索引。
-- `opkg install` 能安装一个带依赖的测试应用，应用可以运行；`upgrade`、`remove` 后包数据库和文件状态一致，重启后保持。
-- 断网、错误源、损坏包、哈希不匹配、磁盘空间不足和依赖无法满足均有确定错误，不破坏已安装系统。
-- APT 路线只有在自维护 DEB 源上的 `apt update/install/upgrade/remove` 全部通过时才可标记为可用；不得用命令存在代替功能验收。
-- 连续收发、队列耗尽、坏描述符、超长包、重置和中断确认均有测试。
-- 网络启用和关闭时，OpenSBI、Linux、磁盘与现有 87 项以上回归测试不退化。
-
 ## 7. 测试策略
 
-测试分为六层：
+测试分为五层：
 
 1. 单元测试：位操作、译码、CSR、MMU、各外设寄存器。
 2. 架构测试：RISC-V Architecture Test 和兼容的 `riscv-tests`。
 3. 差分测试：逐指令比较 PC、寄存器、内存写入和 Trap。
 4. 集成测试：OpenSBI、Linux、VirtIO 根文件系统和 GUI。
-5. 网络测试：VirtIO 队列、DHCP、DNS、TCP/UDP、HTTPS、断网、重置和错误描述符。
-6. 性能回归：固定宿主、Release 构建和固定镜像下记录 steps/s、启动时间、磁盘吞吐、网络吞吐、Framebuffer 写入带宽与显示 FPS。
+5. 性能回归：固定宿主、Release 构建和固定镜像下记录 steps/s、启动时间、磁盘吞吐、Framebuffer 写入带宽与显示 FPS。
 
 所有阶段必须先通过自动测试，再进入下一阶段。
 

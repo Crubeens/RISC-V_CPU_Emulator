@@ -12,6 +12,10 @@
 两份 Linux 配置均为单 Hart、无 F/D/V；RV32 不启用 C，RV64 启用 C。
 OpenSBI、Linux 和 Buildroot 源码仍在 WSL 中独立维护，不复制进本仓库。
 
+`linux-v6.12.96-rv64imac.config` 是当前已经验证的 Buildroot/网络回归
+基线，不是 Debian 13 的最终 RV64GC 配置。RV64F/D 完成并通过验收后，再
+新增独立的 RV64GC 配置快照；不得覆盖当前 RV64IMAC 配置。
+
 ## Linux
 
 RV32：

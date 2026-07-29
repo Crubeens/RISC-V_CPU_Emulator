@@ -8,7 +8,7 @@
 
 - RV32：M9 基线，支持 RV32IMAC、M/S/U、Sv32、OpenSBI、Linux、
   Buildroot ext4 根文件系统和 SDL 图形界面。
-- RV64：M8 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
+- RV64：M9 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
   LP64 Buildroot ext4、SDL、独立性能统计、参考/快速执行模式，以及
   RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS 和 Goldfish RTC。
 - Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 105。
@@ -122,7 +122,7 @@ RV64 Linux：
 Debian 13 riscv64 APT 镜像可由
 [`scripts/build_debian_rv64_rootfs.sh`](scripts/build_debian_rv64_rootfs.sh)
 生成。Debian 官方用户态使用 RV64GC/LP64D；当前网络阶段已完成，但必须先按
-[`core64/RV64FD_APT_PLAN.md`](core64/RV64FD_APT_PLAN.md) 完成 RV64F/D，
+[`core64/RV64_M9_M11_PLAN.md`](core64/RV64_M9_M11_PLAN.md) 完成 RV64-M10，
 才能运行 Debian PID 1 和最终验收 `apt`。
 
 在 `--boot-disk` 前增加 `--gui` 可启用 SDL 窗口，例如：
@@ -148,10 +148,9 @@ Debian 13 riscv64 APT 镜像可由
 
 ## 阶段计划
 
-- RV32 固定计划：[PROJECT_PLAN.md](PROJECT_PLAN.md)
-- RV64 固定计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
-- RV64 网络与 APT：[docs/RV64网络与APT计划.md](docs/RV64网络与APT计划.md)
-- RV64F/D APT 前置阶段：[core64/RV64FD_APT_PLAN.md](core64/RV64FD_APT_PLAN.md)
+- RV32 冻结计划：[PROJECT_PLAN.md](PROJECT_PLAN.md)
+- RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
+- RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
 
-RV64-M1 至 M8 已完成。后续新增能力应作为新的阶段计划提出，不再改写
-既有 M1–M8 验收边界。
+RV64-M1 至 M9 已完成。当前下一阶段是 RV64-M10.1；既有 M1–M8 验收
+边界保持冻结。
