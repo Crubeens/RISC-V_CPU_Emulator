@@ -134,7 +134,7 @@ StepResult Core::step()
     ++state_.cycle;
     state_.registers[0] = 0;
 
-    if ((pc & 0x3U) != 0U) {
+    if ((pc & 0x1U) != 0U) {
         return failure(
             StepStatus::InstructionAddressMisaligned,
             pc,
@@ -143,23 +143,44 @@ StepResult Core::step()
             rv::BusFault::Misaligned);
     }
 
-    const rv::ReadResult fetched = bus_->read(
+    const rv::ReadResult first = bus_->read(
         pc,
-        rv::AccessWidth::Word,
+        rv::AccessWidth::HalfWord,
         rv::AccessKind::InstructionFetch);
-    if (!fetched.ok()) {
+    if (!first.ok()) {
         return failure(
             StepStatus::InstructionAccessFault,
             pc,
             0,
             pc,
-            fetched.fault);
+            first.fault);
     }
 
-    const std::uint32_t instruction =
-        static_cast<std::uint32_t>(fetched.value);
-    const DecodedInstruction decoded =
-        decode_instruction(instruction);
+    std::uint32_t instruction =
+        static_cast<std::uint16_t>(first.value);
+    DecodedInstruction decoded;
+    if ((instruction & 0x3U) != 0x3U) {
+        decoded = decode_compressed_instruction(
+            static_cast<std::uint16_t>(instruction));
+    } else {
+        const rv::ReadResult second = bus_->read(
+            pc + 2U,
+            rv::AccessWidth::HalfWord,
+            rv::AccessKind::InstructionFetch);
+        if (!second.ok()) {
+            return failure(
+                StepStatus::InstructionAccessFault,
+                pc,
+                instruction,
+                pc + 2U,
+                second.fault);
+        }
+        instruction |=
+            static_cast<std::uint32_t>(
+                static_cast<std::uint16_t>(second.value))
+            << 16U;
+        decoded = decode_instruction(instruction);
+    }
     if (!decoded.valid()) {
         return failure(
             StepStatus::IllegalInstruction,
@@ -170,7 +191,7 @@ StepResult Core::step()
 
     const std::uint64_t rs1 = state_.registers[decoded.rs1];
     const std::uint64_t rs2 = state_.registers[decoded.rs2];
-    std::uint64_t next_pc = pc + 4U;
+    std::uint64_t next_pc = pc + decoded.length;
     std::optional<std::uint64_t> register_value;
 
     const auto branch = [&](bool take) {
@@ -691,7 +712,7 @@ StepResult Core::step()
             instruction);
     }
 
-    if ((next_pc & 0x3U) != 0U) {
+    if ((next_pc & 0x1U) != 0U) {
         return failure(
             StepStatus::InstructionAddressMisaligned,
             pc,

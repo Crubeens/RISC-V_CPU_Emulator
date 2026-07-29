@@ -35,3 +35,9 @@ word-result sign extension.
 For RV64-M3, use `-march=rv64ima` with `atomic_extension.S`. The image
 executes LR/SC and every AMO operation in both `.w` and `.d` forms, including
 the `aq`/`rl` ordering-bit encodings.
+
+For RV64-M4, use `-march=rv64imac` with `compressed_smoke.S`. The image checks
+the RV64C integer instruction families, including the RV64-only compressed
+word and doubleword operations, 6-bit shift amounts, control flow and stack
+loads/stores. Build it into `build/debug/architecture64/rv64uc-rvc.elf` and
+convert it to `rv64uc-rvc.bin` when running the Spike differential command.

@@ -72,6 +72,9 @@ Spike 提交轨迹及 Debug/Release 全量回归验收。
 
 ## RV64-M4：RV64C
 
+状态：已完成并通过 RV64C 专项边界、RV64IMAC/LP64 裸机、Spike 提交轨迹及
+Debug/Release 全量回归验收。
+
 内容：
 
 - 实现 RV64C 与 RV32C 不同的编码，包括 `C.LD/C.SD`、

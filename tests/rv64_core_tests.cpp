@@ -447,18 +447,17 @@ void test_control_flow_and_exceptions()
     CHECK(core.snapshot().pc == base);
     CHECK(core.snapshot().instructions_retired == 0U);
 
-    core.reset({.reset_pc = base + 2U});
+    core.reset({.reset_pc = base + 1U});
     CHECK(
         core.step().status ==
         rv64::StepStatus::InstructionAddressMisaligned);
 
-    const std::uint32_t bad_jump[]{encode_j(2U, 1U)};
-    bus.load_program(bad_jump);
+    const std::uint32_t halfword_jump[]{encode_j(2U, 1U)};
+    bus.load_program(halfword_jump);
     core.reset({.reset_pc = base});
-    CHECK(
-        core.step().status ==
-        rv64::StepStatus::InstructionAddressMisaligned);
-    CHECK(core.snapshot().registers[1] == 0U);
+    CHECK(core.step().status == rv64::StepStatus::Retired);
+    CHECK(core.snapshot().registers[1] == base + 4U);
+    CHECK(core.snapshot().pc == base + 2U);
 
     const std::uint32_t bad_load[]{
         encode_i(1U, 0U, 0U, 1U),

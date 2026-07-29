@@ -128,6 +128,31 @@ namespace {
     }
 }
 
+[[nodiscard]] constexpr std::uint8_t compressed_register(
+    std::uint32_t value) noexcept
+{
+    return static_cast<std::uint8_t>(8U + value);
+}
+
+[[nodiscard]] constexpr DecodedInstruction make_compressed(
+    std::uint16_t instruction,
+    InstructionKind kind,
+    std::uint8_t rd = 0,
+    std::uint8_t rs1 = 0,
+    std::uint8_t rs2 = 0,
+    std::uint64_t immediate = 0) noexcept
+{
+    return {
+        .kind = kind,
+        .raw = instruction,
+        .rd = rd,
+        .rs1 = rs1,
+        .rs2 = rs2,
+        .immediate = immediate,
+        .length = 2,
+    };
+}
+
 } // namespace
 
 DecodedInstruction decode_instruction(
@@ -431,6 +456,352 @@ DecodedInstruction decode_instruction(
         return make(instruction, InstructionKind::Illegal);
     default:
         return make(instruction, InstructionKind::Illegal);
+    }
+}
+
+DecodedInstruction decode_compressed_instruction(
+    std::uint16_t instruction) noexcept
+{
+    const std::uint32_t raw = instruction;
+    const DecodedInstruction illegal = make_compressed(
+        instruction,
+        InstructionKind::Illegal);
+    const std::uint32_t quadrant = bits(raw, 1U, 0U);
+    const std::uint32_t funct3 = bits(raw, 15U, 13U);
+    if (quadrant == 3U) {
+        return illegal;
+    }
+
+    if (quadrant == 0U) {
+        switch (funct3) {
+        case 0U: {
+            const std::uint64_t immediate =
+                (bits(raw, 6U, 6U) << 2U) |
+                (bits(raw, 5U, 5U) << 3U) |
+                (bits(raw, 12U, 11U) << 4U) |
+                (bits(raw, 10U, 7U) << 6U);
+            if (immediate == 0U) {
+                return illegal;
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Addi,
+                compressed_register(bits(raw, 4U, 2U)),
+                2U,
+                0U,
+                immediate);
+        }
+        case 2U:
+        case 3U: {
+            const bool doubleword = funct3 == 3U;
+            const std::uint64_t immediate =
+                doubleword
+                    ? ((bits(raw, 12U, 10U) << 3U) |
+                       (bits(raw, 6U, 5U) << 6U))
+                    : ((bits(raw, 6U, 6U) << 2U) |
+                       (bits(raw, 12U, 10U) << 3U) |
+                       (bits(raw, 5U, 5U) << 6U));
+            return make_compressed(
+                instruction,
+                doubleword ? InstructionKind::Ld : InstructionKind::Lw,
+                compressed_register(bits(raw, 4U, 2U)),
+                compressed_register(bits(raw, 9U, 7U)),
+                0U,
+                immediate);
+        }
+        case 6U:
+        case 7U: {
+            const bool doubleword = funct3 == 7U;
+            const std::uint64_t immediate =
+                doubleword
+                    ? ((bits(raw, 12U, 10U) << 3U) |
+                       (bits(raw, 6U, 5U) << 6U))
+                    : ((bits(raw, 6U, 6U) << 2U) |
+                       (bits(raw, 12U, 10U) << 3U) |
+                       (bits(raw, 5U, 5U) << 6U));
+            return make_compressed(
+                instruction,
+                doubleword ? InstructionKind::Sd : InstructionKind::Sw,
+                0U,
+                compressed_register(bits(raw, 9U, 7U)),
+                compressed_register(bits(raw, 4U, 2U)),
+                immediate);
+        }
+        default:
+            return illegal;
+        }
+    }
+
+    if (quadrant == 1U) {
+        const std::uint64_t immediate6 = sign_extend(
+            (bits(raw, 12U, 12U) << 5U) |
+                bits(raw, 6U, 2U),
+            6U);
+        switch (funct3) {
+        case 0U: {
+            const auto rd = static_cast<std::uint8_t>(
+                bits(raw, 11U, 7U));
+            return make_compressed(
+                instruction,
+                InstructionKind::Addi,
+                rd,
+                rd,
+                0U,
+                immediate6);
+        }
+        case 1U: {
+            const auto rd = static_cast<std::uint8_t>(
+                bits(raw, 11U, 7U));
+            if (rd == 0U) {
+                return illegal;
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Addiw,
+                rd,
+                rd,
+                0U,
+                immediate6);
+        }
+        case 2U:
+            return make_compressed(
+                instruction,
+                InstructionKind::Addi,
+                static_cast<std::uint8_t>(bits(raw, 11U, 7U)),
+                0U,
+                0U,
+                immediate6);
+        case 3U: {
+            const auto rd = static_cast<std::uint8_t>(
+                bits(raw, 11U, 7U));
+            if (rd == 2U) {
+                const std::uint64_t immediate = sign_extend(
+                    (bits(raw, 6U, 6U) << 4U) |
+                        (bits(raw, 2U, 2U) << 5U) |
+                        (bits(raw, 5U, 5U) << 6U) |
+                        (bits(raw, 4U, 3U) << 7U) |
+                        (bits(raw, 12U, 12U) << 9U),
+                    10U);
+                if (immediate == 0U) {
+                    return illegal;
+                }
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Addi,
+                    2U,
+                    2U,
+                    0U,
+                    immediate);
+            }
+            if (rd == 0U || immediate6 == 0U) {
+                return illegal;
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Lui,
+                rd,
+                0U,
+                0U,
+                immediate6 << 12U);
+        }
+        case 4U: {
+            const std::uint32_t operation = bits(raw, 11U, 10U);
+            const std::uint8_t rd =
+                compressed_register(bits(raw, 9U, 7U));
+            if (operation == 0U || operation == 1U) {
+                const std::uint64_t shift =
+                    (bits(raw, 12U, 12U) << 5U) |
+                    bits(raw, 6U, 2U);
+                return make_compressed(
+                    instruction,
+                    operation == 0U ? InstructionKind::Srli
+                                    : InstructionKind::Srai,
+                    rd,
+                    rd,
+                    0U,
+                    shift);
+            }
+            if (operation == 2U) {
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Andi,
+                    rd,
+                    rd,
+                    0U,
+                    immediate6);
+            }
+
+            const std::uint8_t rs2 =
+                compressed_register(bits(raw, 4U, 2U));
+            const std::uint32_t subop = bits(raw, 6U, 5U);
+            if (bits(raw, 12U, 12U) == 0U) {
+                constexpr InstructionKind kinds[]{
+                    InstructionKind::Sub,
+                    InstructionKind::Xor,
+                    InstructionKind::Or,
+                    InstructionKind::And,
+                };
+                return make_compressed(
+                    instruction,
+                    kinds[subop],
+                    rd,
+                    rd,
+                    rs2);
+            }
+            if (subop == 0U || subop == 1U) {
+                return make_compressed(
+                    instruction,
+                    subop == 0U ? InstructionKind::Subw
+                                : InstructionKind::Addw,
+                    rd,
+                    rd,
+                    rs2);
+            }
+            return illegal;
+        }
+        case 5U: {
+            const std::uint64_t immediate = sign_extend(
+                (bits(raw, 5U, 3U) << 1U) |
+                    (bits(raw, 11U, 11U) << 4U) |
+                    (bits(raw, 2U, 2U) << 5U) |
+                    (bits(raw, 7U, 7U) << 6U) |
+                    (bits(raw, 6U, 6U) << 7U) |
+                    (bits(raw, 10U, 9U) << 8U) |
+                    (bits(raw, 8U, 8U) << 10U) |
+                    (bits(raw, 12U, 12U) << 11U),
+                12U);
+            return make_compressed(
+                instruction,
+                InstructionKind::Jal,
+                0U,
+                0U,
+                0U,
+                immediate);
+        }
+        case 6U:
+        case 7U: {
+            const std::uint64_t immediate = sign_extend(
+                (bits(raw, 4U, 3U) << 1U) |
+                    (bits(raw, 11U, 10U) << 3U) |
+                    (bits(raw, 2U, 2U) << 5U) |
+                    (bits(raw, 6U, 5U) << 6U) |
+                    (bits(raw, 12U, 12U) << 8U),
+                9U);
+            return make_compressed(
+                instruction,
+                funct3 == 6U ? InstructionKind::Beq
+                             : InstructionKind::Bne,
+                0U,
+                compressed_register(bits(raw, 9U, 7U)),
+                0U,
+                immediate);
+        }
+        default:
+            return illegal;
+        }
+    }
+
+    switch (funct3) {
+    case 0U: {
+        const auto rd = static_cast<std::uint8_t>(
+            bits(raw, 11U, 7U));
+        const std::uint64_t shift =
+            (bits(raw, 12U, 12U) << 5U) |
+            bits(raw, 6U, 2U);
+        return make_compressed(
+            instruction,
+            InstructionKind::Slli,
+            rd,
+            rd,
+            0U,
+            shift);
+    }
+    case 2U:
+    case 3U: {
+        const bool doubleword = funct3 == 3U;
+        const auto rd = static_cast<std::uint8_t>(
+            bits(raw, 11U, 7U));
+        if (rd == 0U) {
+            return illegal;
+        }
+        const std::uint64_t immediate =
+            doubleword
+                ? ((bits(raw, 6U, 5U) << 3U) |
+                   (bits(raw, 12U, 12U) << 5U) |
+                   (bits(raw, 4U, 2U) << 6U))
+                : ((bits(raw, 6U, 4U) << 2U) |
+                   (bits(raw, 12U, 12U) << 5U) |
+                   (bits(raw, 3U, 2U) << 6U));
+        return make_compressed(
+            instruction,
+            doubleword ? InstructionKind::Ld : InstructionKind::Lw,
+            rd,
+            2U,
+            0U,
+            immediate);
+    }
+    case 4U: {
+        const auto rd = static_cast<std::uint8_t>(
+            bits(raw, 11U, 7U));
+        const auto rs2 = static_cast<std::uint8_t>(
+            bits(raw, 6U, 2U));
+        const bool alternate = bits(raw, 12U, 12U) != 0U;
+        if (!alternate) {
+            if (rs2 == 0U) {
+                if (rd == 0U) {
+                    return illegal;
+                }
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Jalr,
+                    0U,
+                    rd);
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Add,
+                rd,
+                0U,
+                rs2);
+        }
+        if (rs2 == 0U) {
+            if (rd == 0U) {
+                return make_compressed(
+                    instruction,
+                    InstructionKind::Ebreak);
+            }
+            return make_compressed(
+                instruction,
+                InstructionKind::Jalr,
+                1U,
+                rd);
+        }
+        return make_compressed(
+            instruction,
+            InstructionKind::Add,
+            rd,
+            rd,
+            rs2);
+    }
+    case 6U:
+    case 7U: {
+        const bool doubleword = funct3 == 7U;
+        const std::uint64_t immediate =
+            doubleword
+                ? ((bits(raw, 12U, 10U) << 3U) |
+                   (bits(raw, 9U, 7U) << 6U))
+                : ((bits(raw, 12U, 9U) << 2U) |
+                   (bits(raw, 8U, 7U) << 6U));
+        return make_compressed(
+            instruction,
+            doubleword ? InstructionKind::Sd : InstructionKind::Sw,
+            0U,
+            2U,
+            static_cast<std::uint8_t>(bits(raw, 6U, 2U)),
+            immediate);
+    }
+    default:
+        return illegal;
     }
 }
 
