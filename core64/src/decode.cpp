@@ -293,6 +293,18 @@ DecodedInstruction decode_instruction(
             } else if (funct3 == 5U) {
                 kind = InstructionKind::Sra;
             }
+        } else if (funct7 == 1U) {
+            constexpr InstructionKind kinds[]{
+                InstructionKind::Mul,
+                InstructionKind::Mulh,
+                InstructionKind::Mulhsu,
+                InstructionKind::Mulhu,
+                InstructionKind::Div,
+                InstructionKind::Divu,
+                InstructionKind::Rem,
+                InstructionKind::Remu,
+            };
+            kind = kinds[funct3];
         }
         return make(instruction, kind);
     }
@@ -317,6 +329,26 @@ DecodedInstruction decode_instruction(
                 kind = InstructionKind::Subw;
             } else if (funct3 == 5U) {
                 kind = InstructionKind::Sraw;
+            }
+        } else if (funct7 == 1U) {
+            switch (funct3) {
+            case 0U:
+                kind = InstructionKind::Mulw;
+                break;
+            case 4U:
+                kind = InstructionKind::Divw;
+                break;
+            case 5U:
+                kind = InstructionKind::Divuw;
+                break;
+            case 6U:
+                kind = InstructionKind::Remw;
+                break;
+            case 7U:
+                kind = InstructionKind::Remuw;
+                break;
+            default:
+                break;
             }
         }
         return make(instruction, kind);

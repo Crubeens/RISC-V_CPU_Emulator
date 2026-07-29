@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 
-DUT_PREFIX = "RV32TRACE "
 SPIKE_RECORD = re.compile(
     r"^core\s+\d+:\s+([0-3])\s+"
     r"0x([0-9a-fA-F]+)\s+\(0x([0-9a-fA-F]+)\)(.*)$"
@@ -32,8 +31,9 @@ class Commit:
     value: int | None
 
 
-def parse_dut_line(line: str) -> Commit | None:
-    if not line.startswith(DUT_PREFIX):
+def parse_dut_line(line: str, xlen: int = 32) -> Commit | None:
+    dut_prefix = f"RV{xlen}TRACE "
+    if not line.startswith(dut_prefix):
         return None
 
     fields = line.split()
@@ -44,7 +44,7 @@ def parse_dut_line(line: str) -> Commit | None:
     value = None
     if fields[5] != "-":
         match = re.fullmatch(
-            r"x(\d+)=([0-9a-fA-F]{1,8})",
+            rf"x(\d+)=([0-9a-fA-F]{{1,{xlen // 4}}})",
             fields[5],
         )
         if match is None:
@@ -62,7 +62,7 @@ def parse_dut_line(line: str) -> Commit | None:
     )
 
 
-def parse_spike_line(line: str) -> Commit | None:
+def parse_spike_line(line: str, xlen: int = 32) -> Commit | None:
     match = SPIKE_RECORD.match(line)
     if match is None:
         return None
@@ -74,11 +74,11 @@ def parse_spike_line(line: str) -> Commit | None:
         parsed_register = int(register_match.group(1), 10)
         if parsed_register != 0:
             register = parsed_register
-            value = int(register_match.group(2), 16) & 0xFFFFFFFF
+            value = int(register_match.group(2), 16) & ((1 << xlen) - 1)
 
     return Commit(
         privilege=int(match.group(1), 10),
-        pc=int(match.group(2), 16) & 0xFFFFFFFF,
+        pc=int(match.group(2), 16) & ((1 << xlen) - 1),
         instruction=int(match.group(3), 16),
         next_pc=None,
         register=register,
@@ -172,25 +172,42 @@ def self_test() -> int:
     compressed_line = (
         "core   0: 3 0x80000004 (0x0085)"
     )
+    dut64_line = (
+        "RV64TRACE 3 0000000080000000 022081b3 "
+        "0000000080000004 x3=fffffffffffffffe"
+    )
+    spike64_line = (
+        "core   0: 3 0x0000000080000000 (0x022081b3) "
+        "x3  0xfffffffffffffffe"
+    )
 
-    dut = parse_dut_line(dut_line)
-    spike = parse_spike_line(spike_line)
-    compressed = parse_spike_line(compressed_line)
+    dut = parse_dut_line(dut_line, 32)
+    spike = parse_spike_line(spike_line, 32)
+    compressed = parse_spike_line(compressed_line, 32)
+    dut64 = parse_dut_line(dut64_line, 64)
+    spike64 = parse_spike_line(spike64_line, 64)
     if (
         dut is None
         or spike is None
         or compressed is None
+        or dut64 is None
+        or spike64 is None
         or dut.privilege != 3
         or dut.pc != 0x80000000
         or dut.register != 1
         or dut.value != 1
         or spike.instruction != 0x00000093
         or compressed.instruction != 0x0085
+        or dut64.value != 0xFFFFFFFFFFFFFFFE
+        or spike64.value != 0xFFFFFFFFFFFFFFFE
     ):
         print("Spike trace parser self-test failed", file=sys.stderr)
         return 1
     if compare_records([dut], [spike]) is not None:
         print("equal trace comparison self-test failed", file=sys.stderr)
+        return 1
+    if compare_records([dut64], [spike64]) is not None:
+        print("RV64 trace comparison self-test failed", file=sys.stderr)
         return 1
     if compare_records([dut], [spike, compressed]) is None:
         print("strict trace-length self-test failed", file=sys.stderr)
@@ -219,6 +236,9 @@ def main() -> int:
     parser.add_argument("--size", type=lambda value: int(value, 0),
                         default=0x00100000)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--xlen", type=int, choices=(32, 64), default=32)
+    parser.add_argument("--isa")
+    parser.add_argument("--priv", default="msu")
     parser.add_argument(
         "--reference-dut",
         action="store_true",
@@ -255,8 +275,8 @@ def main() -> int:
     spike_output = run_command(
         [
             str(args.spike),
-            "--isa=rv32imac_zicsr_zifencei",
-            "--priv=msu",
+            f"--isa={args.isa or ('rv32imac_zicsr_zifencei' if args.xlen == 32 else 'rv64im')}",
+            f"--priv={args.priv}",
             "--pmpregions=0",
             f"-m0x{args.base:x}:0x{args.size:x}",
             "--instructions=1000000",
@@ -268,13 +288,13 @@ def main() -> int:
 
     dut_records = parse_records(
         dut_output,
-        parse_dut_line,
+        lambda line: parse_dut_line(line, args.xlen),
         args.base,
         args.size,
     )
     spike_records = parse_records(
         spike_output,
-        parse_spike_line,
+        lambda line: parse_spike_line(line, args.xlen),
         args.base,
         args.size,
     )

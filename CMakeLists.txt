@@ -262,6 +262,32 @@ if(RV32_BUILD_TESTS)
         COMMAND rv64_core_tests)
 
     add_executable(
+        rv64_m_extension_tests
+        tests/rv64_m_extension_tests.cpp)
+
+    target_link_libraries(
+        rv64_m_extension_tests
+        PRIVATE
+            rv64_core)
+
+    rv32_enable_warnings(rv64_m_extension_tests)
+
+    add_test(
+        NAME rv64_m_extension_tests
+        COMMAND rv64_m_extension_tests)
+
+    add_executable(
+        rv64_architecture_runner
+        tests/architecture64/runner.cpp)
+
+    target_link_libraries(
+        rv64_architecture_runner
+        PRIVATE
+            rv64_platform)
+
+    rv32_enable_warnings(rv64_architecture_runner)
+
+    add_executable(
         rv64_platform_tests
         tests/rv64_platform_tests.cpp)
 

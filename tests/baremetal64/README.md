@@ -26,3 +26,8 @@ Run it from PowerShell:
 
 Success is reported only when the RV64I/LP64 program reaches its final
 `EBREAK`; any failed self-check executes an illegal instruction instead.
+
+For the RV64-M2 image, replace `-march=rv64i` with `-march=rv64im` and
+`start.S` with `m_extension.S`. It checks all RV64M instruction families,
+including high-half multiplication, division by zero, signed overflow and
+word-result sign extension.

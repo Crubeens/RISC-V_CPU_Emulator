@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <cstdint>
+#include <limits>
 #include <optional>
 
 #include "rv64/core/decode.hpp"
@@ -38,6 +39,53 @@ namespace {
 {
     return std::bit_cast<std::int32_t>(
         static_cast<std::uint32_t>(value));
+}
+
+[[nodiscard]] constexpr std::uint64_t multiply_high_unsigned(
+    std::uint64_t lhs,
+    std::uint64_t rhs) noexcept
+{
+    const std::uint64_t lhs_low = static_cast<std::uint32_t>(lhs);
+    const std::uint64_t lhs_high = lhs >> 32U;
+    const std::uint64_t rhs_low = static_cast<std::uint32_t>(rhs);
+    const std::uint64_t rhs_high = rhs >> 32U;
+
+    const std::uint64_t low_product = lhs_low * rhs_low;
+    const std::uint64_t cross1 = lhs_low * rhs_high;
+    const std::uint64_t cross2 = lhs_high * rhs_low;
+    const std::uint64_t high_product = lhs_high * rhs_high;
+    const std::uint64_t carry =
+        ((low_product >> 32U) +
+         static_cast<std::uint32_t>(cross1) +
+         static_cast<std::uint32_t>(cross2)) >>
+        32U;
+    return high_product + (cross1 >> 32U) +
+           (cross2 >> 32U) + carry;
+}
+
+[[nodiscard]] constexpr std::uint64_t multiply_high_signed(
+    std::uint64_t lhs,
+    std::uint64_t rhs) noexcept
+{
+    std::uint64_t result = multiply_high_unsigned(lhs, rhs);
+    if ((lhs >> 63U) != 0U) {
+        result -= rhs;
+    }
+    if ((rhs >> 63U) != 0U) {
+        result -= lhs;
+    }
+    return result;
+}
+
+[[nodiscard]] constexpr std::uint64_t multiply_high_signed_unsigned(
+    std::uint64_t lhs,
+    std::uint64_t rhs) noexcept
+{
+    std::uint64_t result = multiply_high_unsigned(lhs, rhs);
+    if ((lhs >> 63U) != 0U) {
+        result -= rhs;
+    }
+    return result;
 }
 
 [[nodiscard]] constexpr bool aligned(
@@ -244,6 +292,51 @@ StepResult Core::step()
     case InstructionKind::And:
         register_value = rs1 & rs2;
         break;
+    case InstructionKind::Mul:
+        register_value = rs1 * rs2;
+        break;
+    case InstructionKind::Mulh:
+        register_value = multiply_high_signed(rs1, rs2);
+        break;
+    case InstructionKind::Mulhsu:
+        register_value = multiply_high_signed_unsigned(rs1, rs2);
+        break;
+    case InstructionKind::Mulhu:
+        register_value = multiply_high_unsigned(rs1, rs2);
+        break;
+    case InstructionKind::Div:
+        if (rs2 == 0U) {
+            register_value = std::numeric_limits<std::uint64_t>::max();
+        } else if (
+            rs1 == (std::uint64_t{1} << 63U) &&
+            rs2 == std::numeric_limits<std::uint64_t>::max()) {
+            register_value = rs1;
+        } else {
+            register_value = std::bit_cast<std::uint64_t>(
+                as_signed(rs1) / as_signed(rs2));
+        }
+        break;
+    case InstructionKind::Divu:
+        register_value =
+            rs2 == 0U
+                ? std::numeric_limits<std::uint64_t>::max()
+                : rs1 / rs2;
+        break;
+    case InstructionKind::Rem:
+        if (rs2 == 0U) {
+            register_value = rs1;
+        } else if (
+            rs1 == (std::uint64_t{1} << 63U) &&
+            rs2 == std::numeric_limits<std::uint64_t>::max()) {
+            register_value = 0U;
+        } else {
+            register_value = std::bit_cast<std::uint64_t>(
+                as_signed(rs1) % as_signed(rs2));
+        }
+        break;
+    case InstructionKind::Remu:
+        register_value = rs2 == 0U ? rs1 : rs1 % rs2;
+        break;
     case InstructionKind::Addw:
         register_value = sign_extend_word(rs1 + rs2);
         break;
@@ -263,6 +356,60 @@ StepResult Core::step()
             static_cast<std::uint32_t>(
                 as_signed_word(rs1) >> (rs2 & 0x1FU)));
         break;
+    case InstructionKind::Mulw:
+        register_value = sign_extend_word(
+            static_cast<std::uint32_t>(rs1) *
+            static_cast<std::uint32_t>(rs2));
+        break;
+    case InstructionKind::Divw: {
+        const std::int32_t lhs = as_signed_word(rs1);
+        const std::int32_t rhs = as_signed_word(rs2);
+        std::int32_t result{};
+        if (rhs == 0) {
+            result = -1;
+        } else if (
+            lhs == std::numeric_limits<std::int32_t>::min() &&
+            rhs == -1) {
+            result = lhs;
+        } else {
+            result = lhs / rhs;
+        }
+        register_value = sign_extend_word(
+            std::bit_cast<std::uint32_t>(result));
+        break;
+    }
+    case InstructionKind::Divuw: {
+        const std::uint32_t lhs = static_cast<std::uint32_t>(rs1);
+        const std::uint32_t rhs = static_cast<std::uint32_t>(rs2);
+        register_value = sign_extend_word(
+            rhs == 0U ? std::numeric_limits<std::uint32_t>::max()
+                      : lhs / rhs);
+        break;
+    }
+    case InstructionKind::Remw: {
+        const std::int32_t lhs = as_signed_word(rs1);
+        const std::int32_t rhs = as_signed_word(rs2);
+        std::int32_t result{};
+        if (rhs == 0) {
+            result = lhs;
+        } else if (
+            lhs == std::numeric_limits<std::int32_t>::min() &&
+            rhs == -1) {
+            result = 0;
+        } else {
+            result = lhs % rhs;
+        }
+        register_value = sign_extend_word(
+            std::bit_cast<std::uint32_t>(result));
+        break;
+    }
+    case InstructionKind::Remuw: {
+        const std::uint32_t lhs = static_cast<std::uint32_t>(rs1);
+        const std::uint32_t rhs = static_cast<std::uint32_t>(rs2);
+        register_value = sign_extend_word(
+            rhs == 0U ? lhs : lhs % rhs);
+        break;
+    }
     case InstructionKind::Lb:
     case InstructionKind::Lh:
     case InstructionKind::Lw:

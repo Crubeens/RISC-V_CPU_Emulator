@@ -41,6 +41,9 @@
 
 ## RV64-M2：RV64M
 
+状态：已完成并通过专项边界、RV64IM/LP64 裸机、Spike 提交轨迹及
+Debug/Release 全量回归验收。
+
 内容：
 
 - 实现 64 位 `MUL/MULH/MULHSU/MULHU/DIV/DIVU/REM/REMU`。
