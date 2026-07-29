@@ -924,6 +924,10 @@ void test_core_fetch_load_and_page_fault_integration()
         core.snapshot().registers[5] ==
         0x1122334455667788ULL);
     CHECK(core.tlb_entries() >= 2U);
+    CHECK(core.performance_counters().mmu.tlb_misses >= 2U);
+    CHECK(core.performance_counters().mmu.tlb_hits >= 1U);
+    CHECK(core.performance_counters().mmu.page_table_walks >= 2U);
+    CHECK(core.performance_counters().mmu.pte_reads >= 6U);
 
     CHECK(core.step().status == rv64::StepStatus::Retired);
     CHECK(core.step().status == rv64::StepStatus::Retired);
@@ -943,6 +947,8 @@ void test_core_fetch_load_and_page_fault_integration()
         static_cast<std::uint64_t>(
             rv64::ExceptionCause::LoadPageFault));
     CHECK(core.snapshot().machine_csrs.mtval == virtual_data);
+    CHECK(core.performance_counters().synchronous_traps == 1U);
+    CHECK(core.performance_counters().mmu.page_faults >= 1U);
 }
 
 } // namespace

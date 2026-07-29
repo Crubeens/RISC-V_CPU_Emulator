@@ -82,7 +82,8 @@ struct MmuPerformanceCounters {
     rv::CpuBus& bus,
     const CpuSnapshot& state,
     Xlen virtual_address,
-    MemoryAccessType access);
+    MemoryAccessType access,
+    MmuPerformanceCounters* counters = nullptr);
 
 // A local-hart, 64-entry, four-way Sv39 TLB. Each entry keeps the leaf PTE so
 // privilege, SUM, MXR, and access-type checks remain effective on every hit.

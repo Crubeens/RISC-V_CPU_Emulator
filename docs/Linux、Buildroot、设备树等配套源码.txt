@@ -4,6 +4,8 @@ Linux、OpenSBI、Buildroot 与设备树配套说明
 本项目不把大型上游源码树放入 Git。外部软件在 WSL/Ubuntu 中独立编译，
 最终二进制复制到项目根目录 boot-images/；项目自己的 DTS 位于
 platform32/dts/ 和 platform64/dts/，构建时生成对应 DTB。
+实际启动成功的完整 Linux/Buildroot 配置快照和重建命令保存在
+configs/README.md、configs/linux/ 和 configs/buildroot/。
 
 一、固定版本
 

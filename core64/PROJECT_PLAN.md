@@ -150,14 +150,36 @@ UART、Framebuffer、虚拟磁盘回写及 Debug/Release 全量回归验收。
 
 ## RV64-M8：性能与收尾
 
+状态：已完成并通过参考/快速逐步差分、性能基准、真实 OpenSBI S-mode
+载荷、Debug/Release 102 项全量回归及 RV32 性能回归验收。
+
 内容：
 
 - 为 RV64 增加 TLB、译码、取指、总线和 Trap 性能统计。
 - 增加参考模式与快速模式差分。
 - 整理构建、镜像生成、启动和验收文档。
 
+实现：
+
+- 快速模式使用既有 64 项四路 Sv39 TLB 和 1024 项原始指令译码缓存。
+- 参考模式直接译码，并在 Sv39 下每次执行完整页表遍历。
+- 两种模式共享同一执行、CSR、Trap、权限和总线语义。
+- 增加整数、访存、循环和分支的逐步 `StepResult/CpuSnapshot` 差分。
+- `rv64_architecture_runner` 支持 `--reference` 轨迹。
+- 整机退出时打印吞吐、Trap、取指、TLB、页表、译码、总线和
+  Framebuffer 统计。
+- 归档 RV32/RV64 Linux 6.12.96 与 Buildroot 2025.02.16 完整配置。
+
 验收：
 
 - 优化不跳过异常、权限或 CSR 检查。
 - RV32 性能不因 RV64 加入而下降。
 - 两种 CPU 的构建、测试和运行命令可独立复现。
+
+验收结果：
+
+- Release 百万步基准：参考模式约 17.59 Msteps/s，快速模式约
+  21.86 Msteps/s，约 1.24 倍；数值取决于宿主机，仅作为当前基线。
+- 真实 OpenSBI v1.8.1 进入 S-mode、载荷打印成功并正常 SBI 关机。
+- RV32 Release 快速基准约 23.10 Msteps/s，未因 RV64 M8 发生代码路径退化。
+- Debug 与 Release 均为 102/102 通过。

@@ -308,28 +308,41 @@ TranslationResult translate_address(
     rv::CpuBus& bus,
     const CpuSnapshot& state,
     Xlen virtual_address,
-    MemoryAccessType access)
+    MemoryAccessType access,
+    MmuPerformanceCounters* counters)
 {
+    if (counters != nullptr) {
+        ++counters->translations;
+    }
     const PrivilegeMode privilege =
         effective_privilege(state, access);
     const Xlen satp = sanitize_satp(
         state.supervisor_csrs.satp);
     if (privilege == PrivilegeMode::Machine ||
         (satp & satp_bits::mode) == 0U) {
+        if (counters != nullptr) {
+            ++counters->bare_translations;
+        }
         return ready(
             static_cast<rv::PhysAddr>(virtual_address));
     }
     if (!canonical_sv39_address(virtual_address)) {
+        if (counters != nullptr) {
+            ++counters->page_faults;
+        }
         return page_fault();
     }
 
+    if (counters != nullptr) {
+        ++counters->page_table_walks;
+    }
     return walk_address(
         bus,
         state,
         virtual_address,
         access,
         nullptr,
-        nullptr);
+        counters);
 }
 
 const Sv39Tlb::Entry* Sv39Tlb::lookup(

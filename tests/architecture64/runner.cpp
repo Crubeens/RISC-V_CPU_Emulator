@@ -52,12 +52,24 @@ void print_commit(const rv64::StepResult& result, std::uint64_t next_pc)
 
 int main(int argc, char** argv)
 {
-    if (argc != 3 || std::string_view(argv[1]) != "--trace") {
-        std::cerr << "usage: rv64_architecture_runner --trace <binary>\n";
+    bool reference_mode = false;
+    const char* image_path = nullptr;
+    if (argc == 3 && std::string_view(argv[1]) == "--trace") {
+        image_path = argv[2];
+    } else if (
+        argc == 4 &&
+        std::string_view(argv[1]) == "--trace" &&
+        std::string_view(argv[2]) == "--reference") {
+        reference_mode = true;
+        image_path = argv[3];
+    } else {
+        std::cerr
+            << "usage: rv64_architecture_runner --trace "
+            << "[--reference] <binary>\n";
         return 2;
     }
     std::vector<std::uint8_t> image;
-    if (!read_image(argv[2], image)) {
+    if (!read_image(image_path, image)) {
         std::cerr << "cannot read RV64 architecture image\n";
         return 3;
     }
@@ -70,6 +82,10 @@ int main(int argc, char** argv)
         return 4;
     }
     machine.reset({.reset_pc = rv64::platform::address_map::dram_base});
+    if (reference_mode) {
+        machine.core().set_execution_mode(
+            rv64::ExecutionMode::Reference);
+    }
 
     for (std::uint64_t step = 0; step < step_limit; ++step) {
         const rv64::StepResult result = machine.step();

@@ -1,5 +1,6 @@
 #include "rv64/core/core.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <limits>
@@ -119,10 +120,13 @@ void Core::reset(const ResetConfig& config) noexcept
     state_.registers[11] = config.boot_argument;
     sampled_irq_lines_ = {};
     tlb_.clear();
+    clear_decode_cache(false);
+    performance_counters_ = {};
 }
 
 StepResult Core::step(const IrqLines& irq_lines)
 {
+    ++performance_counters_.step_calls;
     ++state_.cycle;
     state_.registers[0] = 0;
     sampled_irq_lines_ = irq_lines;
@@ -130,6 +134,7 @@ StepResult Core::step(const IrqLines& irq_lines)
 
     if (state_.waiting_for_interrupt) {
         if (!interrupt_wake_requested(state_)) {
+            ++performance_counters_.waiting_returns;
             return {
                 .status = StepStatus::WaitingForInterrupt,
                 .privilege = state_.privilege,
@@ -142,6 +147,7 @@ StepResult Core::step(const IrqLines& irq_lines)
     const InterruptSelection interrupt =
         select_pending_interrupt(state_);
     if (interrupt.pending) {
+        ++performance_counters_.interrupt_traps;
         const PrivilegeMode interrupted_privilege = state_.privilege;
         const Xlen interrupted_pc = state_.pc;
         take_interrupt_trap(
@@ -165,6 +171,7 @@ StepResult Core::step(const IrqLines& irq_lines)
             std::uint32_t instruction,
             Xlen trap_value,
             rv::BusFault bus_fault = rv::BusFault::None) {
+        ++performance_counters_.synchronous_traps;
         static_cast<void>(take_trap(
             state_,
             {
@@ -181,6 +188,23 @@ StepResult Core::step(const IrqLines& irq_lines)
             .bus_fault = bus_fault,
         };
     };
+    const auto translate =
+        [&](Xlen virtual_address, MemoryAccessType access) {
+        if (execution_mode_ == ExecutionMode::Fast) {
+            return tlb_.translate(
+                *bus_,
+                state_,
+                virtual_address,
+                access,
+                &performance_counters_.mmu);
+        }
+        return translate_address(
+            *bus_,
+            state_,
+            virtual_address,
+            access,
+            &performance_counters_.mmu);
+    };
 
     if ((pc & 0x1U) != 0U) {
         return trap(
@@ -190,9 +214,8 @@ StepResult Core::step(const IrqLines& irq_lines)
             rv::BusFault::Misaligned);
     }
 
-    const TranslationResult first_translation = tlb_.translate(
-        *bus_,
-        state_,
+    ++performance_counters_.fetch.instruction_fetches;
+    const TranslationResult first_translation = translate(
         pc,
         MemoryAccessType::InstructionFetch);
     if (!first_translation.ready()) {
@@ -204,6 +227,7 @@ StepResult Core::step(const IrqLines& irq_lines)
             pc,
             first_translation.bus_fault);
     }
+    ++performance_counters_.fetch.halfword_reads;
     const rv::ReadResult first = bus_->read(
         first_translation.physical_address,
         rv::AccessWidth::HalfWord,
@@ -220,12 +244,11 @@ StepResult Core::step(const IrqLines& irq_lines)
         static_cast<std::uint16_t>(first.value);
     DecodedInstruction decoded;
     if ((instruction & 0x3U) != 0x3U) {
-        decoded = decode_compressed_instruction(
-            static_cast<std::uint16_t>(instruction));
+        ++performance_counters_.fetch.compressed_instructions;
+        decoded = decode(instruction, 2U);
     } else {
-        const TranslationResult second_translation = tlb_.translate(
-            *bus_,
-            state_,
+        ++performance_counters_.fetch.standard_instructions;
+        const TranslationResult second_translation = translate(
             pc + 2U,
             MemoryAccessType::InstructionFetch);
         if (!second_translation.ready()) {
@@ -238,6 +261,7 @@ StepResult Core::step(const IrqLines& irq_lines)
                 pc + 2U,
                 second_translation.bus_fault);
         }
+        ++performance_counters_.fetch.halfword_reads;
         const rv::ReadResult second = bus_->read(
             second_translation.physical_address,
             rv::AccessWidth::HalfWord,
@@ -253,7 +277,7 @@ StepResult Core::step(const IrqLines& irq_lines)
             static_cast<std::uint32_t>(
                 static_cast<std::uint16_t>(second.value))
             << 16U;
-        decoded = decode_instruction(instruction);
+        decoded = decode(instruction, 4U);
     }
     if (!decoded.valid()) {
         return trap(
@@ -555,9 +579,7 @@ StepResult Core::step(const IrqLines& irq_lines)
         const MemoryAccessType access =
             load_reserved ? MemoryAccessType::Load
                           : MemoryAccessType::Store;
-        const TranslationResult translation = tlb_.translate(
-            *bus_,
-            state_,
+        const TranslationResult translation = translate(
             address,
             access);
         if (!translation.ready()) {
@@ -740,9 +762,7 @@ StepResult Core::step(const IrqLines& irq_lines)
                 address,
                 rv::BusFault::Misaligned);
         }
-        const TranslationResult translation = tlb_.translate(
-            *bus_,
-            state_,
+        const TranslationResult translation = translate(
             address,
             MemoryAccessType::Load);
         if (!translation.ready()) {
@@ -791,9 +811,7 @@ StepResult Core::step(const IrqLines& irq_lines)
                 address,
                 rv::BusFault::Misaligned);
         }
-        const TranslationResult translation = tlb_.translate(
-            *bus_,
-            state_,
+        const TranslationResult translation = translate(
             address,
             MemoryAccessType::Store);
         if (!translation.ready()) {
@@ -820,7 +838,9 @@ StepResult Core::step(const IrqLines& irq_lines)
         break;
     }
     case InstructionKind::Fence:
+        break;
     case InstructionKind::FenceI:
+        clear_decode_cache(true);
         break;
     case InstructionKind::Csrrw:
     case InstructionKind::Csrrs:
@@ -978,6 +998,7 @@ StepResult Core::step(const IrqLines& irq_lines)
     state_.registers[0] = 0;
     state_.pc = next_pc;
     ++state_.instructions_retired;
+    ++performance_counters_.retired_instructions;
     state_.waiting_for_interrupt = wait_for_interrupt;
     if (csr_write.has_value()) {
         csr_file.write_validated(
@@ -1005,9 +1026,87 @@ const IrqLines& Core::sampled_irq_lines() const noexcept
     return sampled_irq_lines_;
 }
 
+const CorePerformanceCounters&
+Core::performance_counters() const noexcept
+{
+    return performance_counters_;
+}
+
 std::size_t Core::tlb_entries() const noexcept
 {
     return tlb_.valid_entries();
+}
+
+void Core::set_execution_mode(ExecutionMode mode) noexcept
+{
+    if (execution_mode_ == mode) {
+        return;
+    }
+    execution_mode_ = mode;
+    tlb_.clear();
+    clear_decode_cache(true);
+}
+
+ExecutionMode Core::execution_mode() const noexcept
+{
+    return execution_mode_;
+}
+
+std::size_t Core::decoded_entries() const noexcept
+{
+    return static_cast<std::size_t>(std::count_if(
+        decode_cache_.begin(),
+        decode_cache_.end(),
+        [](const DecodeCacheEntry& entry) {
+            return entry.valid;
+        }));
+}
+
+DecodedInstruction Core::decode(
+    std::uint32_t instruction,
+    std::uint8_t length) noexcept
+{
+    const auto decode_direct =
+        [instruction, length]() {
+        return length == 2U
+                   ? decode_compressed_instruction(
+                         static_cast<std::uint16_t>(instruction))
+                   : decode_instruction(instruction);
+    };
+    if (execution_mode_ == ExecutionMode::Reference) {
+        return decode_direct();
+    }
+
+    auto& counters = performance_counters_.decode;
+    ++counters.lookups;
+    const std::uint32_t mixed =
+        instruction ^ (instruction >> 11U) ^
+        (static_cast<std::uint32_t>(length) << 29U);
+    DecodeCacheEntry& entry =
+        decode_cache_[mixed % decode_cache_.size()];
+    if (entry.valid &&
+        entry.length == length &&
+        entry.instruction == instruction) {
+        ++counters.hits;
+        return entry.decoded;
+    }
+
+    ++counters.misses;
+    entry = {
+        .valid = true,
+        .length = length,
+        .instruction = instruction,
+        .decoded = decode_direct(),
+    };
+    return entry.decoded;
+}
+
+void Core::clear_decode_cache(bool count_invalidation) noexcept
+{
+    decode_cache_ = {};
+    if (count_invalidation) {
+        ++performance_counters_.decode.invalidations;
+    }
 }
 
 } // namespace rv64

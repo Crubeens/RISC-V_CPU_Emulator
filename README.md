@@ -8,9 +8,9 @@
 
 - RV32：M9 基线，支持 RV32IMAC、M/S/U、Sv32、OpenSBI、Linux、
   Buildroot ext4 根文件系统和 SDL 图形界面。
-- RV64：M7 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
-  LP64 Buildroot ext4 根文件系统和 SDL 图形界面。
-- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 100。
+- RV64：M8 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
+  LP64 Buildroot ext4、SDL、独立性能统计以及参考/快速执行模式。
+- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 102。
 
 ## 架构边界
 
@@ -41,6 +41,7 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 - NS16550A UART、CLINT、PLIC、Syscon 和 640×480 XRGB8888 Framebuffer。
 - SDL2 窗口、UART 终端、Framebuffer 显示和键盘输入。
 - RV32 官方 `riscv-tests` I/M/A/C 用例及 Spike Commit Trace 差分。
+- RV64 Sv39 TLB、译码缓存、取指/Trap/总线统计及参考/快速逐步差分。
 
 ## 构建和测试
 
@@ -63,6 +64,7 @@ ctest --preset release
 ```powershell
 ctest --preset debug -L architecture --output-on-failure
 ctest --preset debug -L differential --output-on-failure
+.\build\release\rv64_performance_runner.exe 1000000
 ```
 
 没有找到 Spike 时只跳过实时差分测试，不影响其他构建和测试。
@@ -72,6 +74,9 @@ ctest --preset debug -L differential --output-on-failure
 
 RV64 裸机镜像由 WSL 中的 RISC-V Linux 工具链生成，步骤见
 [`tests/baremetal64/README.md`](tests/baremetal64/README.md)。
+已验证的 Linux/Buildroot 完整配置与重建命令见
+[`configs/README.md`](configs/README.md)，M8 计数和验收说明见
+[`docs/RV64-M8性能与验收.md`](docs/RV64-M8性能与验收.md)。
 
 ## 运行
 
@@ -127,4 +132,5 @@ RV64 Linux：
 - RV32 固定计划：[PROJECT_PLAN.md](PROJECT_PLAN.md)
 - RV64 固定计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 
-下一阶段是 RV64-M8：性能统计、参考/快速路径差分以及最终可复现性收尾。
+RV64-M1 至 M8 已完成。后续新增能力应作为新的阶段计划提出，不再改写
+既有 M1–M8 验收边界。

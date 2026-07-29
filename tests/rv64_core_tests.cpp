@@ -591,6 +591,80 @@ void test_environment_and_access_faults()
     const auto store = core.step();
     CHECK(store.status == rv64::StepStatus::TrapTaken);
     CHECK(store.bus_fault == rv::BusFault::Unmapped);
+    CHECK(core.performance_counters().step_calls == 1U);
+    CHECK(core.performance_counters().synchronous_traps == 1U);
+    CHECK(core.performance_counters().retired_instructions == 0U);
+}
+
+void test_reference_fast_modes_and_performance_counters()
+{
+    const std::uint32_t program[]{
+        encode_i(0U, 0U, 0U, 1U),
+        encode_i(32U, 0U, 0U, 2U),
+        encode_i(1U, 1U, 0U, 1U),
+        encode_b(
+            static_cast<std::uint32_t>(-4),
+            2U,
+            1U,
+            4U),
+        encode_j(0U, 0U),
+    };
+
+    TestBus reference_bus;
+    TestBus fast_bus;
+    reference_bus.load_program(program);
+    fast_bus.load_program(program);
+
+    rv64::Core reference(reference_bus);
+    rv64::Core fast(fast_bus);
+    reference.set_execution_mode(rv64::ExecutionMode::Reference);
+    reference.reset({.reset_pc = base});
+    fast.set_execution_mode(rv64::ExecutionMode::Fast);
+    fast.reset({.reset_pc = base});
+
+    constexpr std::uint64_t steps = 160U;
+    for (std::uint64_t step = 0; step < steps; ++step) {
+        const auto reference_result = reference.step();
+        const auto fast_result = fast.step();
+        CHECK(reference_result.status == fast_result.status);
+        CHECK(reference_result.privilege == fast_result.privilege);
+        CHECK(reference_result.pc == fast_result.pc);
+        CHECK(reference_result.instruction == fast_result.instruction);
+        CHECK(
+            reference_result.register_write.enabled ==
+            fast_result.register_write.enabled);
+        CHECK(
+            reference_result.register_write.index ==
+            fast_result.register_write.index);
+        CHECK(
+            reference_result.register_write.value ==
+            fast_result.register_write.value);
+        CHECK(reference.snapshot() == fast.snapshot());
+    }
+
+    const auto& reference_counters =
+        reference.performance_counters();
+    const auto& fast_counters = fast.performance_counters();
+    CHECK(reference.execution_mode() == rv64::ExecutionMode::Reference);
+    CHECK(fast.execution_mode() == rv64::ExecutionMode::Fast);
+    CHECK(reference_counters.step_calls == steps);
+    CHECK(fast_counters.step_calls == steps);
+    CHECK(reference_counters.retired_instructions == steps);
+    CHECK(fast_counters.retired_instructions == steps);
+    CHECK(reference_counters.decode.lookups == 0U);
+    CHECK(fast_counters.decode.lookups == steps);
+    CHECK(fast_counters.decode.misses >= 4U);
+    CHECK(fast_counters.decode.hits > fast_counters.decode.misses);
+    CHECK(fast.decoded_entries() >= 4U);
+    CHECK(
+        reference_counters.fetch.instruction_fetches == steps);
+    CHECK(fast_counters.fetch.instruction_fetches == steps);
+    CHECK(reference_counters.fetch.halfword_reads == steps * 2U);
+    CHECK(fast_counters.fetch.halfword_reads == steps * 2U);
+    CHECK(reference_counters.mmu.translations == steps * 2U);
+    CHECK(fast_counters.mmu.translations == steps * 2U);
+    CHECK(reference_counters.mmu.bare_translations == steps * 2U);
+    CHECK(fast_counters.mmu.bare_translations == steps * 2U);
 }
 
 } // namespace
@@ -604,6 +678,7 @@ int main()
     test_control_flow_and_exceptions();
     test_all_branches_jalr_and_commit_metadata();
     test_environment_and_access_faults();
+    test_reference_fast_modes_and_performance_counters();
 
     if (failures == 0) {
         std::cout << "All independent RV64I core tests passed\n";

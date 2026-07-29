@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
@@ -23,6 +24,7 @@
 #include <unistd.h>
 #endif
 
+#include "rv/devices/framebuffer.hpp"
 #include "rv/devices/syscon.hpp"
 #include "rv/devices/uart16550.hpp"
 #include "rv/devices/virtio_block.hpp"
@@ -187,6 +189,109 @@ void forward_console_input(platform::Machine& machine)
     if (size != 0U) {
         machine.uart().inject_received(
             std::string_view(input.data(), size));
+    }
+}
+
+void print_performance_diagnostics(
+    platform::Machine& machine,
+    std::chrono::steady_clock::duration elapsed)
+{
+    const double seconds =
+        std::chrono::duration<double>(elapsed).count();
+    const auto& core = machine.core().performance_counters();
+    const auto& mmu = core.mmu;
+    const auto& decode = core.decode;
+    const auto& fetch = core.fetch;
+    const auto& bus = machine.bus().performance_counters();
+    const double steps_per_second =
+        seconds > 0.0
+            ? static_cast<double>(core.step_calls) / seconds
+            : 0.0;
+    const double tlb_hit_rate =
+        mmu.tlb_hits + mmu.tlb_misses == 0U
+            ? 0.0
+            : 100.0 * static_cast<double>(mmu.tlb_hits) /
+                  static_cast<double>(
+                      mmu.tlb_hits + mmu.tlb_misses);
+    const double decode_hit_rate =
+        decode.hits + decode.misses == 0U
+            ? 0.0
+            : 100.0 * static_cast<double>(decode.hits) /
+                  static_cast<double>(
+                      decode.hits + decode.misses);
+    const auto read_count = [&](rv::AccessKind kind) {
+        return bus.reads[static_cast<std::size_t>(kind)];
+    };
+    const auto write_count = [&](rv::AccessKind kind) {
+        return bus.writes[static_cast<std::size_t>(kind)];
+    };
+
+    std::cerr
+        << std::fixed << std::setprecision(3)
+        << "RV64-M8 performance statistics:\n"
+        << "  mode="
+        << (machine.core().execution_mode() ==
+                    ExecutionMode::Fast
+                ? "fast"
+                : "reference")
+        << ", elapsed=" << seconds
+        << "s, steps=" << core.step_calls
+        << ", throughput=" << steps_per_second / 1'000'000.0
+        << " Msteps/s, retired=" << core.retired_instructions
+        << '\n'
+        << "  traps: synchronous=" << core.synchronous_traps
+        << ", interrupt=" << core.interrupt_traps
+        << ", WFI-idle=" << core.waiting_returns << '\n'
+        << "  fetch: instructions=" << fetch.instruction_fetches
+        << ", halfword-reads=" << fetch.halfword_reads
+        << ", compressed=" << fetch.compressed_instructions
+        << ", standard=" << fetch.standard_instructions << '\n'
+        << "  TLB: hit=" << mmu.tlb_hits
+        << ", miss=" << mmu.tlb_misses
+        << ", hit-rate=" << tlb_hit_rate
+        << "%, walks=" << mmu.page_table_walks
+        << ", PTE-read=" << mmu.pte_reads
+        << ", PTE-write=" << mmu.pte_writes << '\n'
+        << "  decode-cache: hit=" << decode.hits
+        << ", miss=" << decode.misses
+        << ", hit-rate=" << decode_hit_rate
+        << "%, invalidations=" << decode.invalidations << '\n'
+        << "  bus reads: fetch="
+        << read_count(rv::AccessKind::InstructionFetch)
+        << ", load=" << read_count(rv::AccessKind::Load)
+        << ", walk=" << read_count(rv::AccessKind::PageTableWalk)
+        << ", atomic=" << read_count(rv::AccessKind::Atomic)
+        << ", DMA=" << read_count(rv::AccessKind::Dma)
+        << '\n'
+        << "  bus writes: store="
+        << write_count(rv::AccessKind::Store)
+        << ", walk=" << write_count(rv::AccessKind::PageTableWalk)
+        << ", atomic=" << write_count(rv::AccessKind::Atomic)
+        << ", DMA=" << write_count(rv::AccessKind::Dma)
+        << ", faults=" << bus.faults << '\n'
+        << "  bus device lookup cache: "
+        << bus.device_cache_hits << '/' << bus.device_lookups
+        << " hits, device-ticks=" << bus.device_ticks
+        << std::defaultfloat << '\n';
+
+    if (const auto* framebuffer = machine.framebuffer();
+        framebuffer != nullptr) {
+        const auto& statistics = framebuffer->statistics();
+        const double guest_megabytes_per_second =
+            seconds > 0.0
+                ? static_cast<double>(statistics.bytes_written) /
+                      seconds / (1024.0 * 1024.0)
+                : 0.0;
+        std::cerr
+            << "  framebuffer: guest-writes="
+            << statistics.write_operations
+            << ", guest-bytes=" << statistics.bytes_written
+            << ", dirty-updates="
+            << statistics.dirty_region_updates
+            << ", guest-bandwidth=" << std::fixed
+            << std::setprecision(3)
+            << guest_megabytes_per_second << " MiB/s"
+            << std::defaultfloat << '\n';
     }
 }
 
@@ -450,8 +555,12 @@ int run_boot(
     std::cout
         << "Host terminal input is connected to RV64 guest UART.\n\n";
 
+    const auto boot_started = std::chrono::steady_clock::now();
     const auto finish =
         [&](int result) {
+            print_performance_diagnostics(
+                machine,
+                std::chrono::steady_clock::now() - boot_started);
             return write_back_disk(machine, virtual_disk_path)
                        ? result
                        : 7;

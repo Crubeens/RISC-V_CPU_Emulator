@@ -396,6 +396,25 @@ if(RV_BUILD_TESTS)
         COMMAND rv64_mmu_tests)
 
     add_executable(
+        rv64_mode_differential_tests
+        tests/rv64_mode_differential_tests.cpp)
+
+    target_link_libraries(
+        rv64_mode_differential_tests
+        PRIVATE
+            rv64_platform)
+
+    rv_enable_warnings(rv64_mode_differential_tests)
+
+    add_test(
+        NAME rv64_mode_differential_tests
+        COMMAND rv64_mode_differential_tests)
+    set_tests_properties(
+        rv64_mode_differential_tests
+        PROPERTIES
+            LABELS "differential")
+
+    add_executable(
         rv64_architecture_runner
         tests/architecture64/runner.cpp)
 
@@ -732,6 +751,26 @@ if(RV_BUILD_TESTS)
     add_test(
         NAME rv32_mmu_tests
         COMMAND rv32_mmu_tests)
+
+    add_executable(
+        rv64_performance_runner
+        tests/performance/runner64.cpp)
+
+    target_link_libraries(
+        rv64_performance_runner
+        PRIVATE
+            rv64_platform)
+
+    rv_enable_warnings(rv64_performance_runner)
+
+    add_test(
+        NAME rv64_performance_smoke
+        COMMAND rv64_performance_runner 100000)
+    set_tests_properties(
+        rv64_performance_smoke
+        PROPERTIES
+            LABELS "performance"
+            TIMEOUT 30)
 
     add_executable(
         rv32_performance_runner
