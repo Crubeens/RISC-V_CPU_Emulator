@@ -1473,6 +1473,124 @@ if(RV_BUILD_TESTS)
             rv32_architecture_runner
             rv32_architecture_images)
 
+        set(
+            RV64_ARCHITECTURE_OUTPUT_DIR
+            "${CMAKE_CURRENT_BINARY_DIR}/architecture64")
+        set(
+            RV64F_ARCHITECTURE_TESTS
+            fadd
+            fclass
+            fcmp
+            fcvt
+            fcvt_w
+            fdiv
+            fmadd
+            fmin
+            ldst
+            move
+            recoding)
+        set(
+            RV64D_ARCHITECTURE_TESTS
+            fadd
+            fclass
+            fcmp
+            fcvt
+            fcvt_w
+            fdiv
+            fmadd
+            fmin
+            ldst
+            move
+            recoding
+            structural)
+
+        function(rv64_add_floating_architecture_tests suite)
+            foreach(test_name IN LISTS ARGN)
+                set(
+                    test_elf
+                    "${RV64_ARCHITECTURE_OUTPUT_DIR}/${suite}-${test_name}.elf")
+                set(
+                    test_binary
+                    "${RV64_ARCHITECTURE_OUTPUT_DIR}/${suite}-${test_name}.bin")
+                set(
+                    test_source
+                    "${RV32_RISCV_TESTS_DIR}/isa/${suite}/${test_name}.S")
+
+                add_custom_command(
+                    OUTPUT
+                        "${test_binary}"
+                    BYPRODUCTS
+                        "${test_elf}"
+                    COMMAND
+                        ${CMAKE_COMMAND} -E make_directory
+                        "${RV64_ARCHITECTURE_OUTPUT_DIR}"
+                    COMMAND
+                        "${RV32_BAREMETAL_GCC}"
+                        -march=rv64imafdc_zicsr_zifencei
+                        -mabi=lp64d
+                        -static
+                        -mcmodel=medany
+                        -fvisibility=hidden
+                        -nostdlib
+                        -nostartfiles
+                        -mno-relax
+                        "-I${RV32_RISCV_TESTS_DIR}/env/p"
+                        "-I${RV32_RISCV_TESTS_DIR}/isa/macros/scalar"
+                        "-T${PROJECT_SOURCE_DIR}/tests/architecture64/link.ld"
+                        -Wl,--no-relax
+                        "${test_source}"
+                        -o
+                        "${test_elf}"
+                    COMMAND
+                        "${RV32_BAREMETAL_OBJCOPY}"
+                        -O
+                        binary
+                        "${test_elf}"
+                        "${test_binary}"
+                    DEPENDS
+                        "${test_source}"
+                        ${RV32_ARCHITECTURE_SUPPORT_FILES}
+                        tests/architecture64/link.ld
+                    ${RV32_ARCHITECTURE_JOB_POOL}
+                    VERBATIM)
+
+                list(
+                    APPEND
+                    RV64_FLOATING_ARCHITECTURE_BINARIES
+                    "${test_binary}")
+                add_test(
+                    NAME "rv64_arch_${suite}_${test_name}"
+                    COMMAND
+                        rv64_architecture_runner
+                        "${test_binary}")
+                set_tests_properties(
+                    "rv64_arch_${suite}_${test_name}"
+                    PROPERTIES
+                        LABELS "architecture;rv64gc"
+                        TIMEOUT 20)
+            endforeach()
+            set(
+                RV64_FLOATING_ARCHITECTURE_BINARIES
+                "${RV64_FLOATING_ARCHITECTURE_BINARIES}"
+                PARENT_SCOPE)
+        endfunction()
+
+        rv64_add_floating_architecture_tests(
+            rv64uf
+            ${RV64F_ARCHITECTURE_TESTS})
+        rv64_add_floating_architecture_tests(
+            rv64ud
+            ${RV64D_ARCHITECTURE_TESTS})
+
+        add_custom_target(
+            rv64_floating_architecture_images
+            ALL
+            DEPENDS
+                ${RV64_FLOATING_ARCHITECTURE_BINARIES})
+        add_dependencies(
+            rv64_architecture_runner
+            rv64_floating_architecture_images)
+
         find_package(
             Python3
             COMPONENTS Interpreter

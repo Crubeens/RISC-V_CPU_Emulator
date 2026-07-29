@@ -110,7 +110,7 @@ inline constexpr Xlen supported_interrupt_delegation =
     (Xlen{1} << 1U) | (Xlen{1} << 5U) | (Xlen{1} << 9U);
 inline constexpr Xlen supported_counter_enable = 0x7U;
 inline constexpr Xlen machine_isa_value =
-    (Xlen{2} << 62U) | 0x141105U;
+    (Xlen{2} << 62U) | 0x14112DU;
 
 [[nodiscard]] Xlen sanitize_mstatus(Xlen value) noexcept;
 [[nodiscard]] Xlen sanitize_tvec(Xlen value) noexcept;

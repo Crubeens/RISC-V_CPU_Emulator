@@ -182,7 +182,10 @@ void test_csr_width_aliases_and_warl()
         csrs.read(
             rv64::csr_address::misa,
             rv64::PrivilegeMode::Machine).value ==
-        0x8000000000141105ULL);
+        0x800000000014112DULL);
+    CHECK(
+        rv64::Core::isa_string() ==
+        "rv64imafdc_zicntr_zicsr_zifencei");
     CHECK(
         csrs.read(
             rv64::csr_address::mhartid,

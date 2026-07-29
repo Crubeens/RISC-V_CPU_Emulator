@@ -19,6 +19,9 @@ SPIKE_RECORD = re.compile(
 SPIKE_GPR_WRITE = re.compile(
     r"(?:^|\s)x\s*(\d+)\s+0x([0-9a-fA-F]+)"
 )
+SPIKE_FPR_WRITE = re.compile(
+    r"(?:^|\s)f\s*(\d+)\s+0x([0-9a-fA-F]+)"
+)
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class Commit:
     next_pc: int | None
     register: int | None
     value: int | None
+    floating_register: bool = False
 
 
 def parse_dut_line(line: str, xlen: int = 32) -> Commit | None:
@@ -42,15 +46,17 @@ def parse_dut_line(line: str, xlen: int = 32) -> Commit | None:
 
     register = None
     value = None
+    floating_register = False
     if fields[5] != "-":
         match = re.fullmatch(
-            rf"x(\d+)=([0-9a-fA-F]{{1,{xlen // 4}}})",
+            rf"([xf])(\d+)=([0-9a-fA-F]{{1,{xlen // 4}}})",
             fields[5],
         )
         if match is None:
             raise ValueError(f"malformed DUT register write: {line}")
-        register = int(match.group(1), 10)
-        value = int(match.group(2), 16)
+        floating_register = match.group(1) == "f"
+        register = int(match.group(2), 10)
+        value = int(match.group(3), 16)
 
     return Commit(
         privilege=int(fields[1], 10),
@@ -59,6 +65,7 @@ def parse_dut_line(line: str, xlen: int = 32) -> Commit | None:
         next_pc=int(fields[4], 16),
         register=register,
         value=value,
+        floating_register=floating_register,
     )
 
 
@@ -69,11 +76,18 @@ def parse_spike_line(line: str, xlen: int = 32) -> Commit | None:
 
     register = None
     value = None
+    floating_register = False
     register_match = SPIKE_GPR_WRITE.search(match.group(4))
     if register_match is not None:
         parsed_register = int(register_match.group(1), 10)
         if parsed_register != 0:
             register = parsed_register
+            value = int(register_match.group(2), 16) & ((1 << xlen) - 1)
+    else:
+        register_match = SPIKE_FPR_WRITE.search(match.group(4))
+        if register_match is not None:
+            floating_register = True
+            register = int(register_match.group(1), 10)
             value = int(register_match.group(2), 16) & ((1 << xlen) - 1)
 
     return Commit(
@@ -83,6 +97,7 @@ def parse_spike_line(line: str, xlen: int = 32) -> Commit | None:
         next_pc=None,
         register=register,
         value=value,
+        floating_register=floating_register,
     )
 
 
@@ -118,6 +133,7 @@ def compare_records(
             actual.instruction,
             actual.register,
             actual.value,
+            actual.floating_register,
         )
         expected_architecture = (
             expected.privilege,
@@ -125,6 +141,7 @@ def compare_records(
             expected.instruction,
             expected.register,
             expected.value,
+            expected.floating_register,
         )
         if actual_architecture != expected_architecture:
             return (
@@ -180,18 +197,30 @@ def self_test() -> int:
         "core   0: 3 0x0000000080000000 (0x022081b3) "
         "x3  0xfffffffffffffffe"
     )
+    dut64_float_line = (
+        "RV64TRACE 0 000000008000015e 00b576d3 "
+        "0000000080000162 f13=ffffffff40600000"
+    )
+    spike64_float_line = (
+        "core   0: 0 0x000000008000015e (0x00b576d3) "
+        "f13 0xffffffff40600000"
+    )
 
     dut = parse_dut_line(dut_line, 32)
     spike = parse_spike_line(spike_line, 32)
     compressed = parse_spike_line(compressed_line, 32)
     dut64 = parse_dut_line(dut64_line, 64)
     spike64 = parse_spike_line(spike64_line, 64)
+    dut64_float = parse_dut_line(dut64_float_line, 64)
+    spike64_float = parse_spike_line(spike64_float_line, 64)
     if (
         dut is None
         or spike is None
         or compressed is None
         or dut64 is None
         or spike64 is None
+        or dut64_float is None
+        or spike64_float is None
         or dut.privilege != 3
         or dut.pc != 0x80000000
         or dut.register != 1
@@ -200,6 +229,10 @@ def self_test() -> int:
         or compressed.instruction != 0x0085
         or dut64.value != 0xFFFFFFFFFFFFFFFE
         or spike64.value != 0xFFFFFFFFFFFFFFFE
+        or not dut64_float.floating_register
+        or not spike64_float.floating_register
+        or dut64_float.register != 13
+        or spike64_float.value != 0xFFFFFFFF40600000
     ):
         print("Spike trace parser self-test failed", file=sys.stderr)
         return 1
@@ -208,6 +241,9 @@ def self_test() -> int:
         return 1
     if compare_records([dut64], [spike64]) is not None:
         print("RV64 trace comparison self-test failed", file=sys.stderr)
+        return 1
+    if compare_records([dut64_float], [spike64_float]) is not None:
+        print("RV64 floating trace comparison self-test failed", file=sys.stderr)
         return 1
     if compare_records([dut], [spike, compressed]) is None:
         print("strict trace-length self-test failed", file=sys.stderr)
@@ -229,6 +265,14 @@ def main() -> int:
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--dut", type=Path)
     parser.add_argument("--binary", type=Path)
+    parser.add_argument(
+        "--dut-binary",
+        type=Path,
+        help=(
+            "optional DUT-native path for the raw binary when the script "
+            "runs through WSL"
+        ),
+    )
     parser.add_argument("--elf", type=Path)
     parser.add_argument("--spike", type=Path)
     parser.add_argument("--base", type=lambda value: int(value, 0),
@@ -270,7 +314,7 @@ def main() -> int:
     dut_command = [str(args.dut), "--trace"]
     if args.reference_dut:
         dut_command.append("--reference")
-    dut_command.append(str(args.binary))
+    dut_command.append(str(args.dut_binary or args.binary))
     dut_output = run_command(dut_command, args.timeout)
     spike_output = run_command(
         [

@@ -31,11 +31,14 @@ Linux/用户态目标：RV32IMA、ILP32、单 Hart、Sv32、无 F/D/V。
 
 - boot-images/opensbi-v1.8.1-rv64-fw_jump.bin
 - boot-images/linux-v6.12.96-rv64imac-Image
+- boot-images/linux-v6.12.96-rv64gc-Image
 - boot-images/rootfs-buildroot-v2025.02.16-rv64imac.ext4
+- boot-images/debian-13-riscv64-apt.ext4
 - build/<配置>/images/rv64-virt.dtb
 
-Linux/用户态目标：RV64IMAC、LP64、单 Hart、Sv39、无 F/D/V。
-Buildroot 使用 musl、BusyBox 和 128 MiB ext4 根文件系统。
+Buildroot 快速基线使用 RV64IMAC、LP64、单 Hart、Sv39、musl、BusyBox
+和 128 MiB ext4。Debian 使用 RV64GC、LP64D 和 768 MiB ext4；对应内核
+必须使用启用 `CONFIG_FPU` 的 RV64GC 配置。
 
 四、职责边界
 
@@ -55,10 +58,10 @@ Buildroot 使用 musl、BusyBox 和 128 MiB ext4 根文件系统。
 - 网络：RV64 VirtIO Net + libslirp DHCP/DNS/NAT
 - 时间：Goldfish RTC，使用宿主实时时间
 
-Debian 官方 riscv64 使用 RV64GC/LP64D。镜像、网络、RTC 已准备完成。
-RV64-M10.1 已实现 C.FSD 等浮点传输指令和 FS/CSR 状态，但完整浮点算术、
-Spike 差分和 RV64GC ISA 宣告仍未完成。必须完成
-core64/RV64_M9_M11_PLAN.md 中的整个 RV64-M10 后才能进行 APT 最终验收。
+Debian 官方 riscv64 使用 RV64GC/LP64D。RV64-M10 已完成完整 F/D 标量
+实现、官方架构测试、Spike 差分和 RV64GC ISA 宣告；已验证动态加载器、
+systemd PID 1、shell、apt 可执行文件与 DHCP。公网 HTTPS、包安装和磁盘
+持久化由 core64/RV64_M9_M11_PLAN.md 中的 RV64-M11 最终验收。
 
 历史参考软件仓库：
 https://github.com/bane9/rv64gc-emu-software

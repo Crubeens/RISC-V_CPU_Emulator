@@ -26,9 +26,16 @@ Buildroot 已验证 DHCP 地址 10.0.2.15、网关 10.0.2.2、DNS 10.0.2.3。
 Debian 13 APT 镜像名：
   boot-images/debian-13-riscv64-apt.ext4
 
-该镜像已生成并能启动到 PID 1，但 Debian 官方用户态为 RV64GC/LP64D；
-完成 core64/RV64_M9_M11_PLAN.md 中的 RV64-M10 和 M11 之前，不要把它
-当作已通过 APT 验收。
+Debian 13 RV64GC/LP64D：
+
+.\build\release\riscv_emulator.exe --cpu rv64 --boot-disk `
+  ".\boot-images\opensbi-v1.8.1-rv64-fw_jump.bin" `
+  ".\boot-images\linux-v6.12.96-rv64gc-Image" `
+  ".\build\release\images\rv64-virt.dtb" `
+  ".\boot-images\debian-13-riscv64-apt.ext4"
+
+M10 已验证 systemd PID 1、shell、apt 可执行文件和 DHCP。公网 HTTPS、
+软件安装与持久化属于 M11，尚不能把镜像当作已完成最终 APT 验收。
 
 三、SDL 图形界面
 

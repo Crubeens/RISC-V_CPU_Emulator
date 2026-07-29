@@ -55,7 +55,7 @@
 
 ## RV64-M10：完整 RV64F/RV64D
 
-状态：进行中；M10.1、M10.2、M10.3 已完成，当前下一阶段为 M10.4。
+状态：已完成（2026-07-30）。
 
 ### M10.1：状态、CSR、访存、移动和压缩访存
 
@@ -140,15 +140,33 @@
 
 ### M10.4：整核与软件栈验收
 
+状态：已完成（2026-07-30）。
+
 - 完成 F/D 裸机、架构测试和 Spike Commit Trace 差分。
 - Debug、Release、RV32 全量和 RV64IMAC 原有测试全部通过。
 - OpenSBI、DTS 和 Linux ISA 宣告只有在实现完成后才更新为实际支持的
   `rv64imafdc`。
 - Debian 13 PID 1、动态加载器、systemd、Shell 和 DHCP 正常运行。
 
+验收记录：
+
+- `misa`、Core ISA 字符串和 DTS 统一声明
+  `rv64imafdc_zicntr_zicsr_zifencei`；OpenSBI 实机输出为
+  `rv64imafdc`，Linux 识别 F/D/C 与 Zicntr。
+- 引入官方 `riscv-tests` 的 11 个 RV64UF 与 12 个 RV64UD 用例；
+  Debug 与 Release 全量测试均为 131/131 通过，包含 RV32 全量回归。
+- 12 个代表性 RV64UF/RV64UD 用例与固定 Spike 版本逐提交比较，
+  GPR、FPR、PC 和指令均一致。
+- 新增启用 `CONFIG_FPU` 的独立 RV64GC Linux 配置和镜像；保留原
+  RV64IMAC Buildroot 回归配置与镜像，不覆盖 RV32 或 RV64IMAC 产物。
+- Debian 13 的 LP64D 动态加载器、systemd 257 PID 1、`/bin/sh`、
+  `dpkg --print-architecture` 与 `apt 3.0.3 (riscv64)` 均已运行。
+- Debian 使用 VirtIO Net/libslirp 获得 `10.0.2.15/24`，默认路由
+  `10.0.2.2`，DNS `10.0.2.3`。
+
 ## RV64-M11：Debian、APT 与可长期使用的资源配置
 
-状态：前置镜像、VirtIO 网络和 RTC 已准备；等待 M10 完成。
+状态：进行中；M10 已完成，当前进入文件后端磁盘、资源配置与 APT 验收。
 
 软件基线：
 

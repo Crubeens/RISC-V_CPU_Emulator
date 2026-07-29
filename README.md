@@ -8,11 +8,11 @@
 
 - RV32：M9 基线，支持 RV32IMAC、M/S/U、Sv32、OpenSBI、Linux、
   Buildroot ext4 根文件系统和 SDL 图形界面。
-- RV64：M10.1 完成，支持 RV64IMAC、M/S/U、Sv39、OpenSBI、Linux、
-  LP64 Buildroot ext4、SDL、独立性能统计、参考/快速执行模式，以及
+- RV64：M10 完成，支持 RV64GC、M/S/U、Sv39、OpenSBI、Linux、
+  LP64 Buildroot 与 LP64D Debian ext4、SDL、独立性能统计、参考/快速执行模式，以及
   RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS、Goldfish RTC 和
-  F/D 浮点状态/传输基础。
-- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 106。
+  完整的 RV64F/RV64D 标量浮点实现。
+- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 131。
 
 ## 架构边界
 
@@ -35,7 +35,7 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 
 - RV32I/RV64I 基础整数指令和 RV64 W 类指令。
 - RV32M/RV64M、RV32A/RV64A、RV32C/RV64C。
-- RV64 M10.1–M10.3 浮点状态与完整标量执行：32×64 位 FPR、
+- RV64F/RV64D 浮点状态与完整标量执行：32×64 位 FPR、
   `fflags/frm/fcsr`、FS/SD、浮点访存/移动、S/D 加减乘除、平方根、
   四类融合乘加、比较/分类/最值/符号和全部 S/D/整数转换。
 - Zicsr、Zifencei、Zicntr。
@@ -49,6 +49,7 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 - NS16550A UART、CLINT、PLIC、Syscon 和 640×480 XRGB8888 Framebuffer。
 - SDL2 窗口、UART 终端、Framebuffer 显示和键盘输入。
 - RV32 官方 `riscv-tests` I/M/A/C 用例及 Spike Commit Trace 差分。
+- RV64 官方 `riscv-tests` F/D 用例、带 FPR 提交值的 Spike Commit Trace 差分。
 - RV64 Sv39 TLB、译码缓存、取指/Trap/总线统计及参考/快速逐步差分。
 
 ## 构建和测试
@@ -125,9 +126,18 @@ RV64 Linux：
 
 Debian 13 riscv64 APT 镜像可由
 [`scripts/build_debian_rv64_rootfs.sh`](scripts/build_debian_rv64_rootfs.sh)
-生成。Debian 官方用户态使用 RV64GC/LP64D；当前网络阶段已完成，但必须先按
-[`core64/RV64_M9_M11_PLAN.md`](core64/RV64_M9_M11_PLAN.md) 完成 RV64-M10，
-才能运行 Debian PID 1 和最终验收 `apt`。
+生成。Debian 官方用户态使用 RV64GC/LP64D；M10 已验证动态加载器、
+`systemd` PID 1、shell、`dpkg`、`apt` 可执行文件和 DHCP。使用：
+
+```powershell
+.\build\release\riscv_emulator.exe --cpu rv64 --boot-disk `
+  .\boot-images\opensbi-v1.8.1-rv64-fw_jump.bin `
+  .\boot-images\linux-v6.12.96-rv64gc-Image `
+  .\build\release\images\rv64-virt.dtb `
+  .\boot-images\debian-13-riscv64-apt.ext4
+```
+
+公网 HTTPS、软件安装和磁盘持久化的最终验收属于 M11。
 
 在 `--boot-disk` 前增加 `--gui` 可启用 SDL 窗口，例如：
 
@@ -156,6 +166,5 @@ Debian 13 riscv64 APT 镜像可由
 - RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 - RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
 
-RV64-M1 至 M9 和 M10.1–M10.3 已完成。当前下一阶段是 RV64-M10.4；在完整
-F/D 算术和差分验收前，对外 ISA 宣告仍保持 RV64IMAC，既有 M1–M8
-验收边界保持冻结。
+RV64-M1 至 M10 已完成。当前下一阶段是 RV64-M11；RV64 对外 ISA 已更新为
+`rv64imafdc_zicntr_zicsr_zifencei`，既有 M1–M8 验收边界保持冻结。

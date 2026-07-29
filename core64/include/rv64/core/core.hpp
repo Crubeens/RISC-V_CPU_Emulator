@@ -60,7 +60,7 @@ class Core {
 
     [[nodiscard]] static constexpr std::string_view isa_string() noexcept
     {
-        return "rv64imac_zicntr_zicsr_zifencei";
+        return "rv64imafdc_zicntr_zicsr_zifencei";
     }
 
   private:

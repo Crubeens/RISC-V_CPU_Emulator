@@ -7,11 +7,28 @@
 #include <string_view>
 #include <vector>
 
+#include "rv/devices/ram.hpp"
 #include "rv64/platform/machine.hpp"
 
 namespace {
 
 constexpr std::uint64_t step_limit = 1'000'000ULL;
+constexpr std::size_t tohost_offset = 0x10000U;
+
+[[nodiscard]] std::uint32_t read_word(
+    const rv::devices::Ram& ram,
+    std::size_t offset)
+{
+    const auto bytes = ram.bytes();
+    if (offset > bytes.size() ||
+        sizeof(std::uint32_t) > bytes.size() - offset) {
+        return 0;
+    }
+    return static_cast<std::uint32_t>(bytes[offset]) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
+}
 
 [[nodiscard]] bool read_image(
     const char* path,
@@ -42,6 +59,13 @@ void print_commit(const rv64::StepResult& result, std::uint64_t next_pc)
             << static_cast<unsigned int>(result.register_write.index)
             << '=' << std::hex << std::setw(16)
             << result.register_write.value;
+    } else if (result.floating_register_write.enabled) {
+        std::cout
+            << 'f' << std::dec
+            << static_cast<unsigned int>(
+                   result.floating_register_write.index)
+            << '=' << std::hex << std::setw(16)
+            << result.floating_register_write.value;
     } else {
         std::cout << '-';
     }
@@ -52,20 +76,29 @@ void print_commit(const rv64::StepResult& result, std::uint64_t next_pc)
 
 int main(int argc, char** argv)
 {
+    bool trace_enabled = false;
     bool reference_mode = false;
     const char* image_path = nullptr;
-    if (argc == 3 && std::string_view(argv[1]) == "--trace") {
-        image_path = argv[2];
-    } else if (
-        argc == 4 &&
-        std::string_view(argv[1]) == "--trace" &&
-        std::string_view(argv[2]) == "--reference") {
-        reference_mode = true;
-        image_path = argv[3];
-    } else {
+    for (int index = 1; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument == "--trace") {
+            trace_enabled = true;
+        } else if (argument == "--reference") {
+            reference_mode = true;
+        } else if (!argument.empty() && argument.front() == '-') {
+            std::cerr << "unknown option: " << argument << '\n';
+            return 2;
+        } else if (image_path == nullptr) {
+            image_path = argv[index];
+        } else {
+            image_path = nullptr;
+            break;
+        }
+    }
+    if (image_path == nullptr) {
         std::cerr
-            << "usage: rv64_architecture_runner --trace "
-            << "[--reference] <binary>\n";
+            << "usage: rv64_architecture_runner "
+            << "[--trace] [--reference] <binary>\n";
         return 2;
     }
     std::vector<std::uint8_t> image;
@@ -74,7 +107,12 @@ int main(int argc, char** argv)
         return 3;
     }
 
-    rv64::platform::Machine machine({.enable_framebuffer = false});
+    rv64::platform::Machine machine(
+        {
+            .ram_size = 1024U * 1024U,
+            .virtual_disk_size = 512U,
+            .enable_framebuffer = false,
+        });
     if (machine.load_image(
             image,
             rv64::platform::address_map::dram_base) != rv::BusFault::None) {
@@ -89,8 +127,24 @@ int main(int argc, char** argv)
 
     for (std::uint64_t step = 0; step < step_limit; ++step) {
         const rv64::StepResult result = machine.step();
-        if (result.status == rv64::StepStatus::Retired) {
+        if (trace_enabled &&
+            result.status == rv64::StepStatus::Retired) {
             print_commit(result, machine.core().snapshot().pc);
+        }
+        const std::uint32_t tohost =
+            read_word(machine.ram(), tohost_offset);
+        if (tohost != 0U) {
+            if (tohost == 1U) {
+                return 0;
+            }
+            std::cerr
+                << "RV64 architecture test failed; test="
+                << (tohost >> 1U)
+                << ", tohost=0x" << std::hex << tohost
+                << ", pc=0x" << result.pc << std::dec << '\n';
+            return 1;
+        }
+        if (result.status == rv64::StepStatus::Retired) {
             continue;
         }
         if (result.status == rv64::StepStatus::TrapTaken &&

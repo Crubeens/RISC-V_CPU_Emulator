@@ -44,7 +44,7 @@ assert_fdt_property(
     "/cpus/cpu@0"
     "riscv,isa"
     "s"
-    "rv64imac_zicsr_zifencei")
+    "rv64imafdc_zicntr_zicsr_zifencei")
 assert_fdt_property(
     "/cpus/cpu@0"
     "mmu-type"

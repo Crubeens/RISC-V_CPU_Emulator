@@ -38,7 +38,7 @@
             reg = <0>;
             status = "okay";
             compatible = "riscv";
-            riscv,isa = "rv64imac_zicsr_zifencei";
+            riscv,isa = "rv64imafdc_zicntr_zicsr_zifencei";
             mmu-type = "riscv,sv39";
             clock-frequency = <100000000>;
 
