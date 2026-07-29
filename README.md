@@ -7,10 +7,16 @@
 VirtIO ext4 根文件系统。SDL 窗口可以显示 UART 终端或线性
 Framebuffer，键盘输入会送入虚拟 UART。
 
+<<<<<<< HEAD
 RV64 开发已完成 **RV64-M3**：新增独立 RV64I 核心、RV64M 乘除法、
 RV64A 原子指令、RV64 Machine、运行时 CPU 选择和 RV64IMA/LP64 裸机
 入口。RV64 的 C 扩展、特权态、Sv39 和 OpenSBI/Linux 启动属于后续
 阶段，当前不能用 RV64 启动 Linux。
+=======
+RV64 开发已完成 **RV64-M1**：新增独立 RV64I 核心、RV64 Machine、
+运行时 CPU 选择和 RV64I/LP64 裸机入口。RV64 的 M/A/C 扩展、特权态、
+Sv39 和 OpenSBI/Linux 启动属于后续阶段，当前不能用 RV64 启动 Linux。
+>>>>>>> 573f9984e83c63815257f8398619f6acf1b0e1a1
 
 ## 当前包含
 
@@ -29,10 +35,13 @@ RV64A 原子指令、RV64 Machine、运行时 CPU 选择和 RV64IMA/LP64 裸机
 - Debug/Release 自动测试。
 - RV64I：64 位寄存器、完整 RV64I 基础整数指令、LD/SD/LWU、W 类指令、
   独立平台适配层和裸机测试。
+<<<<<<< HEAD
 - RV64M：64 位及 W 类乘法、三种高半乘法、除法与余数，并覆盖除零和
   最小负数除以 `-1` 的边界语义。
 - RV64A：LR/SC.W、LR/SC.D、全部 AMO.W/AMO.D、aq/rl 译码，以及
   reservation 成功、失败和失效语义。
+=======
+>>>>>>> 573f9984e83c63815257f8398619f6acf1b0e1a1
 
 RV32 CPU 核心位于 `core/`，RV64 CPU 核心位于 `core64/`；两者都只依赖
 抽象总线，不依赖 SDL 或任何具体外设实现。
@@ -59,7 +68,11 @@ ctest --preset release
 ctest --preset debug -L architecture
 ```
 
+<<<<<<< HEAD
 RV64 裸机测试需要在 Ubuntu/WSL 中使用 `riscv64-linux-gnu-gcc` 和
+=======
+RV64-M1 裸机测试需要在 Ubuntu/WSL 中使用 `riscv64-linux-gnu-gcc` 和
+>>>>>>> 573f9984e83c63815257f8398619f6acf1b0e1a1
 `riscv64-linux-gnu-objcopy` 生成镜像，完整命令见
 [`tests/baremetal64/README.md`](tests/baremetal64/README.md)。生成后可运行：
 
@@ -75,7 +88,11 @@ build\debug\rv32_emulator.exe --cpu rv32
 build\debug\rv32_emulator.exe --cpu rv64
 ```
 
+<<<<<<< HEAD
 省略 `--cpu` 时默认使用 RV32。RV64 还支持 `--load-images` 验证三段
+=======
+省略 `--cpu` 时默认使用 RV32。RV64-M1 还支持 `--load-images` 验证三段
+>>>>>>> 573f9984e83c63815257f8398619f6acf1b0e1a1
 镜像的加载布局；`--boot` 和 `--boot-disk` 要等 RV64 特权态阶段完成后启用。
 
 ## 提交轨迹与 Spike 差分
@@ -142,7 +159,11 @@ build/release/rv32_emulator.exe --gui --boot-disk `
 
 ```text
 core/          自研 CPU 核心
+<<<<<<< HEAD
 core64/        独立 RV64IMA CPU 核心及 RV64 实施计划
+=======
+core64/        独立 RV64I CPU 核心及 RV64 实施计划
+>>>>>>> 573f9984e83c63815257f8398619f6acf1b0e1a1
 common/        RV32/RV64 共用的架构无关总线类型
 platform/      总线、启动布局和整机装配
 platform64/    RV64 Machine 适配层

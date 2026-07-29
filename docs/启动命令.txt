@@ -1,0 +1,5 @@
+.\build\release\rv32_emulator.exe --boot-disk `
+  ".\build\boot-images\opensbi-v1.8.1-rv32-fw_jump.bin" `
+  ".\build\boot-images\linux-v6.12.96-rv32ima-Image" `
+  ".\build\release\images\rv32-virt.dtb" `
+  ".\build\boot-images\rv32ima-linux-runtime-rootfs.ext4"
