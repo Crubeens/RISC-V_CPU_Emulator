@@ -5,6 +5,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <iomanip>
@@ -50,6 +51,8 @@ constexpr std::uint64_t default_boot_step_limit = 20'000'000ULL;
 constexpr std::uint64_t unlimited_step_limit =
     std::numeric_limits<std::uint64_t>::max();
 constexpr std::uint64_t console_poll_interval = 1024ULL;
+constexpr std::uint64_t network_diagnostic_interval =
+    100'000'000ULL;
 constexpr std::uint64_t bytes_per_mib = 1024ULL * 1024ULL;
 constexpr std::uint64_t minimum_ram_mib = 64ULL;
 constexpr std::uint64_t maximum_ram_mib = 4096ULL;
@@ -538,6 +541,8 @@ int run_boot(
 
 #if defined(RV_ENABLE_NETWORK)
     rv::app::SlirpNetworkBackend network_backend;
+    const bool network_diagnostics_enabled =
+        std::getenv("RV_NETWORK_DIAGNOSTICS") != nullptr;
     if (!network_backend.ready()) {
         std::cerr
             << "Cannot start RV64 user-mode network: "
@@ -627,12 +632,30 @@ int run_boot(
                 << " bytes, drops="
                 << device.dropped_transmit_frames +
                        device.dropped_receive_frames
+                << ", pending="
+                << device.pending_receive_frames
+                << "/" << device.peak_pending_receive_frames
+                << ", rx-starvations="
+                << device.receive_queue_starvations
                 << '\n'
                 << "  libslirp guest-to-host="
                 << host.guest_to_host_frames
                 << ", host-to-guest="
                 << host.host_to_guest_frames
+                << ", queued=" << host.queued_host_frames
+                << "/" << host.peak_queued_host_frames
                 << ", polls=" << host.poll_calls
+                << ", observed-sockets="
+                << host.poll_socket_observations
+                << ", ready-events="
+                << host.poll_ready_events
+                << ", poll-errors=" << host.poll_errors
+                << ", last-poll-error="
+                << host.last_poll_error
+                << ", socket-add="
+                << host.poll_socket_registrations
+                << ", socket-remove="
+                << host.poll_socket_unregistrations
                 << ", errors=" << host.guest_errors
                 << '\n';
 #endif
@@ -667,6 +690,33 @@ int run_boot(
 #endif
 
     for (std::uint64_t step = 0; step < step_limit; ++step) {
+#if defined(RV_ENABLE_NETWORK)
+        if (network_diagnostics_enabled && step != 0U &&
+            (step % network_diagnostic_interval) == 0U) {
+            const auto& device = machine.virtio_net().statistics();
+            const auto& host = network_backend.statistics();
+            std::cerr
+                << "\nRV64 network live: step=" << step
+                << ", TX=" << device.transmitted_frames
+                << ", RX=" << device.received_frames
+                << ", drops="
+                << device.dropped_transmit_frames +
+                       device.dropped_receive_frames
+                << ", pending="
+                << device.pending_receive_frames
+                << "/" << device.peak_pending_receive_frames
+                << ", rx-starvations="
+                << device.receive_queue_starvations
+                << ", dma-failures=" << device.dma_failures
+                << ", slirp-queue=" << host.queued_host_frames
+                << "/" << host.peak_queued_host_frames
+                << ", slirp-drops=" << host.dropped_host_frames
+                << ", poll-errors=" << host.poll_errors
+                << ", last-poll-error=" << host.last_poll_error
+                << '\n'
+                << std::flush;
+        }
+#endif
         if ((step % console_poll_interval) == 0U) {
             forward_console_input(machine);
 #if defined(RV_ENABLE_SDL)

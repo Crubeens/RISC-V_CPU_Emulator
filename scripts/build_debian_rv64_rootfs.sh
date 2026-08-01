@@ -53,7 +53,7 @@ mmdebstrap \
     --architectures=riscv64 \
     --variant=minbase \
     --components=main \
-    --include=systemd-sysv,udev,ifupdown,isc-dhcp-client,ca-certificates,iproute2,iputils-ping,curl,apt-utils \
+    --include=systemd-sysv,udev,kmod,procps,ifupdown,isc-dhcp-client,ca-certificates,iproute2,iputils-ping,curl,apt-utils \
     --keyring="${keyring_directory}/usr/share/keyrings/debian-archive-keyring.gpg" \
     trixie \
     "${root_directory}" \

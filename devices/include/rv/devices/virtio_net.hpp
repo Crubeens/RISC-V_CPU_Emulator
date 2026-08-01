@@ -23,6 +23,9 @@ struct VirtioNetStatistics {
     std::uint64_t received_bytes{};
     std::uint64_t dropped_transmit_frames{};
     std::uint64_t dropped_receive_frames{};
+    std::uint64_t pending_receive_frames{};
+    std::uint64_t peak_pending_receive_frames{};
+    std::uint64_t receive_queue_starvations{};
     std::uint64_t dma_failures{};
     std::uint64_t interrupts_raised{};
     std::uint64_t interrupt_acknowledgements{};

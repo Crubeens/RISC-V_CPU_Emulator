@@ -138,7 +138,9 @@ Debian 13 riscv64 APT 镜像可由
   .\boot-images\debian-13-riscv64-apt.ext4
 ```
 
-公网 HTTPS、软件安装和磁盘持久化的最终验收属于 M11。
+M11 已使用 Debian 官方 HTTPS 软件源完成 `apt update`、安装、运行、升级、
+重启持久化、卸载和损坏包拒绝验收。该功能可用，但解释执行下的软件索引解压和
+包数据库处理较慢；首次完整验收约 47 分钟，持久化复验约 9 分钟。
 
 RV64 的 `--ram-mib <MiB>` 必须放在具体命令之前，可选择 64–4096 MiB，
 省略时为 256 MiB。模拟器会同步修改传入 DTB 的 64 位内存范围；损坏的 DTB、
@@ -172,6 +174,6 @@ RV64 的 `--ram-mib <MiB>` 必须放在具体命令之前，可选择 64–4096 
 - RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 - RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
 
-RV64-M1 至 M10 与 M11.1–M11.2 已完成。当前继续 RV64-M11 的 APT 与持久化
+RV64-M1 至 M10 与 M11.1–M11.3 已完成。M11.3 已完成公网 APT 与磁盘持久化
 验收；RV64 对外 ISA 已更新为 `rv64imafdc_zicntr_zicsr_zifencei`，既有
 M1–M8 验收边界保持冻结。

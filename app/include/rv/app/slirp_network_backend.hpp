@@ -17,7 +17,15 @@ struct SlirpNetworkStatistics {
     std::uint64_t host_to_guest_frames{};
     std::uint64_t host_to_guest_bytes{};
     std::uint64_t dropped_host_frames{};
+    std::uint64_t queued_host_frames{};
+    std::uint64_t peak_queued_host_frames{};
     std::uint64_t poll_calls{};
+    std::uint64_t poll_socket_observations{};
+    std::uint64_t poll_ready_events{};
+    std::uint64_t poll_errors{};
+    std::int32_t last_poll_error{};
+    std::uint64_t poll_socket_registrations{};
+    std::uint64_t poll_socket_unregistrations{};
     std::uint64_t guest_errors{};
 };
 

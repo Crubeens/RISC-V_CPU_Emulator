@@ -39,8 +39,9 @@ Debian 13 RV64GC/LP64D：
   ".\build\release\images\rv64-virt.dtb" `
   ".\boot-images\debian-13-riscv64-apt.ext4"
 
-M10 已验证 systemd PID 1、shell、apt 可执行文件和 DHCP。公网 HTTPS、
-软件安装与持久化属于 M11，尚不能把镜像当作已完成最终 APT 验收。
+M11.3 已验证公网 DNS/HTTPS、apt update、hello 包的安装/运行/升级、关机后
+持久化、再次启动和卸载，并验证损坏的 deb 包会被拒绝。解释执行下首次更新
+软件索引和维护包数据库会明显慢于真实硬件，开机输出短暂停顿不等于死机。
 
 三、SDL 图形界面
 

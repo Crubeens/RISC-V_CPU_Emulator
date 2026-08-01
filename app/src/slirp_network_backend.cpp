@@ -107,6 +107,10 @@ struct SlirpNetworkBackend::Impl {
         callbacks.timer_free = &timer_free_callback;
         callbacks.timer_mod = &timer_mod_callback;
         callbacks.notify = &notify_callback;
+        callbacks.register_poll_socket =
+            &register_poll_socket_callback;
+        callbacks.unregister_poll_socket =
+            &unregister_poll_socket_callback;
 
         slirp = slirp_new(&config, &callbacks, this);
         if (slirp == nullptr) {
@@ -147,6 +151,11 @@ struct SlirpNetworkBackend::Impl {
         const auto* const bytes =
             static_cast<const std::uint8_t*>(buffer);
         self.received_frames.emplace_back(bytes, bytes + length);
+        self.statistics.queued_host_frames =
+            self.received_frames.size();
+        self.statistics.peak_queued_host_frames = std::max(
+            self.statistics.peak_queued_host_frames,
+            self.statistics.queued_host_frames);
         ++self.statistics.host_to_guest_frames;
         self.statistics.host_to_guest_bytes += length;
         return static_cast<slirp_ssize_t>(length);
@@ -208,6 +217,26 @@ struct SlirpNetworkBackend::Impl {
     static void notify_callback(void* opaque)
     {
         static_cast<Impl*>(opaque)->poll_requested = true;
+    }
+
+    static void register_poll_socket_callback(
+        slirp_os_socket socket,
+        void* opaque)
+    {
+        static_cast<void>(socket);
+        auto& self = *static_cast<Impl*>(opaque);
+        ++self.statistics.poll_socket_registrations;
+        self.poll_requested = true;
+    }
+
+    static void unregister_poll_socket_callback(
+        slirp_os_socket socket,
+        void* opaque)
+    {
+        static_cast<void>(socket);
+        auto& self = *static_cast<Impl*>(opaque);
+        ++self.statistics.poll_socket_unregistrations;
+        self.poll_requested = true;
     }
 
     static int add_poll_callback(
@@ -319,38 +348,92 @@ struct SlirpNetworkBackend::Impl {
             &timeout,
             &add_poll_callback,
             &context);
+        statistics.poll_socket_observations += context.entries.size();
 
         int result = 0;
         if (!context.entries.empty()) {
-            std::vector<
 #if defined(_WIN32)
-                WSAPOLLFD
+            for (std::size_t offset = 0U;
+                 offset < context.entries.size();) {
+                const std::size_t end = std::min(
+                    offset + static_cast<std::size_t>(FD_SETSIZE),
+                    context.entries.size());
+                fd_set read_descriptors;
+                fd_set write_descriptors;
+                fd_set exception_descriptors;
+                FD_ZERO(&read_descriptors);
+                FD_ZERO(&write_descriptors);
+                FD_ZERO(&exception_descriptors);
+                for (std::size_t index = offset; index < end; ++index) {
+                    auto& entry = context.entries[index];
+                    entry.descriptor.revents = 0;
+                    if ((entry.descriptor.events &
+                         (POLLRDNORM | POLLIN)) != 0) {
+                        FD_SET(entry.socket, &read_descriptors);
+                    }
+                    if ((entry.descriptor.events &
+                         (POLLWRNORM | POLLOUT)) != 0) {
+                        FD_SET(entry.socket, &write_descriptors);
+                    }
+                    FD_SET(entry.socket, &exception_descriptors);
+                }
+                timeval wait{};
+                const int batch_result = select(
+                    0,
+                    &read_descriptors,
+                    &write_descriptors,
+                    &exception_descriptors,
+                    &wait);
+                if (batch_result == SOCKET_ERROR) {
+                    result = SOCKET_ERROR;
+                    statistics.last_poll_error = WSAGetLastError();
+                    break;
+                }
+                result += batch_result;
+                for (std::size_t index = offset; index < end; ++index) {
+                    auto& entry = context.entries[index];
+                    if (FD_ISSET(entry.socket, &read_descriptors)) {
+                        entry.descriptor.revents |= POLLRDNORM;
+                    }
+                    if (FD_ISSET(entry.socket, &write_descriptors)) {
+                        entry.descriptor.revents |= POLLWRNORM;
+                    }
+                    if (FD_ISSET(
+                            entry.socket,
+                            &exception_descriptors)) {
+                        if ((entry.descriptor.events & POLLPRI) != 0) {
+                            entry.descriptor.revents |= POLLPRI;
+                        } else {
+                            entry.descriptor.revents |= POLLERR;
+                        }
+                    }
+                }
+                offset = end;
+            }
 #else
-                pollfd
-#endif
-                >
+            std::vector<pollfd>
                 descriptors;
             descriptors.reserve(context.entries.size());
             for (const auto& entry : context.entries) {
                 descriptors.push_back(entry.descriptor);
             }
-#if defined(_WIN32)
-            result = WSAPoll(
-                descriptors.data(),
-                static_cast<ULONG>(descriptors.size()),
-                0);
-#else
             result = poll(
                 descriptors.data(),
                 static_cast<nfds_t>(descriptors.size()),
                 0);
-#endif
             for (std::size_t index = 0;
                  index < descriptors.size();
                  ++index) {
                 context.entries[index].descriptor.revents =
                     descriptors[index].revents;
             }
+#endif
+        }
+        if (result > 0) {
+            statistics.poll_ready_events +=
+                static_cast<std::uint64_t>(result);
+        } else if (result < 0) {
+            ++statistics.poll_errors;
         }
 
         slirp_pollfds_poll(
@@ -425,6 +508,8 @@ SlirpNetworkBackend::receive_frame()
     }
     auto frame = std::move(impl_->received_frames.front());
     impl_->received_frames.pop_front();
+    impl_->statistics.queued_host_frames =
+        impl_->received_frames.size();
     return frame;
 }
 

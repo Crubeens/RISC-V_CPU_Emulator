@@ -393,6 +393,17 @@ void test_transmit_receive_dma_and_interrupts()
     CHECK(net.interrupt_pending());
     CHECK(net.statistics().transmitted_frames == 1U);
     CHECK(net.statistics().received_frames == 1U);
+    CHECK(net.statistics().pending_receive_frames == 0U);
+    CHECK(net.statistics().peak_pending_receive_frames == 1U);
+    CHECK(net.statistics().receive_queue_starvations == 0U);
+
+    backend.received.emplace_back(
+        receive_frame.begin(),
+        receive_frame.end());
+    bus.tick_devices(1);
+    CHECK(net.statistics().pending_receive_frames == 1U);
+    CHECK(net.statistics().peak_pending_receive_frames == 1U);
+    CHECK(net.statistics().receive_queue_starvations == 1U);
 }
 
 void test_short_receive_buffer_and_oversized_frame()

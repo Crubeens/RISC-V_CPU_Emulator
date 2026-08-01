@@ -236,6 +236,11 @@ bool VirtioNet::inject_received_frame(
         return false;
     }
     pending_receive_frames_.emplace_back(frame.begin(), frame.end());
+    statistics_.pending_receive_frames =
+        pending_receive_frames_.size();
+    statistics_.peak_pending_receive_frames = std::max(
+        statistics_.peak_pending_receive_frames,
+        statistics_.pending_receive_frames);
     return true;
 }
 
@@ -292,6 +297,7 @@ void VirtioNet::reset() noexcept
     device_status_ = 0;
     queues_ = {};
     pending_receive_frames_.clear();
+    statistics_.pending_receive_frames = 0U;
 }
 
 void VirtioNet::update_queue_addresses(Queue& queue) noexcept
@@ -333,6 +339,11 @@ void VirtioNet::collect_backend_frames(std::uint64_t cycles)
             continue;
         }
         pending_receive_frames_.push_back(std::move(*frame));
+        statistics_.pending_receive_frames =
+            pending_receive_frames_.size();
+        statistics_.peak_pending_receive_frames = std::max(
+            statistics_.peak_pending_receive_frames,
+            statistics_.pending_receive_frames);
     }
 }
 
@@ -403,6 +414,7 @@ void VirtioNet::process_receive_queue(platform::DmaAccess& dma)
         }
         if (queue.last_available_index ==
             static_cast<std::uint16_t>(available_index.value)) {
+            ++statistics_.receive_queue_starvations;
             break;
         }
 
@@ -428,6 +440,8 @@ void VirtioNet::process_receive_queue(platform::DmaAccess& dma)
             bytes_written = 0;
         }
         pending_receive_frames_.pop_front();
+        statistics_.pending_receive_frames =
+            pending_receive_frames_.size();
 
         if (!complete_chain(
                 dma,
