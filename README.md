@@ -56,7 +56,8 @@ RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通�
 - SDL2 窗口、UART 终端、Framebuffer 显示和键盘输入。
 - RV32 官方 `riscv-tests` I/M/A/C 用例及 Spike Commit Trace 差分。
 - RV64 官方 `riscv-tests` F/D 用例、带 FPR 提交值的 Spike Commit Trace 差分。
-- RV64 Sv39 TLB、译码缓存、取指/Trap/总线统计及参考/快速逐步差分。
+- RV64 Sv39 TLB、译码缓存、上下文感知的指令前端缓存、取指/Trap/总线统计及
+  参考/快速逐步差分。
 
 ## 构建和测试
 
@@ -97,7 +98,7 @@ RV64 裸机镜像由 WSL 中的 RISC-V Linux 工具链生成，步骤见
 [`tests/baremetal64/README.md`](tests/baremetal64/README.md)。
 已验证的 Linux/Buildroot 完整配置与重建命令见
 [`configs/README.md`](configs/README.md)，M8 计数和验收说明见
-[`docs/RV64-M8性能与验收.md`](docs/RV64-M8性能与验收.md)。
+[`docs/RV64性能与验收.md`](docs/RV64性能与验收.md)。
 全部说明入口见 [`docs/README.md`](docs/README.md)。
 
 ## 运行

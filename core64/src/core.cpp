@@ -122,6 +122,7 @@ void Core::reset(const ResetConfig& config) noexcept
     sampled_irq_lines_ = {};
     tlb_.clear();
     clear_decode_cache(false);
+    clear_instruction_cache(false);
     performance_counters_ = {};
 }
 
@@ -216,69 +217,94 @@ StepResult Core::step(const IrqLines& irq_lines)
     }
 
     ++performance_counters_.fetch.instruction_fetches;
-    const TranslationResult first_translation = translate(
-        pc,
-        MemoryAccessType::InstructionFetch);
-    if (!first_translation.ready()) {
-        return trap(
-            first_translation.status == TranslationStatus::PageFault
-                ? ExceptionCause::InstructionPageFault
-                : ExceptionCause::InstructionAccessFault,
-            0,
-            pc,
-            first_translation.bus_fault);
-    }
-    ++performance_counters_.fetch.halfword_reads;
-    const rv::ReadResult first = bus_->read(
-        first_translation.physical_address,
-        rv::AccessWidth::HalfWord,
-        rv::AccessKind::InstructionFetch);
-    if (!first.ok()) {
-        return trap(
-            ExceptionCause::InstructionAccessFault,
-            0,
-            pc,
-            first.fault);
-    }
-
-    std::uint32_t instruction =
-        static_cast<std::uint16_t>(first.value);
+    std::uint32_t instruction = 0U;
     DecodedInstruction decoded;
-    if ((instruction & 0x3U) != 0x3U) {
-        ++performance_counters_.fetch.compressed_instructions;
-        decoded = decode(instruction, 2U);
+    const bool may_use_instruction_cache =
+        execution_mode_ == ExecutionMode::Fast &&
+        (pc & 0xFFFU) != 0xFFEU;
+    const bool instruction_cache_hit =
+        may_use_instruction_cache &&
+        lookup_instruction_cache(pc, instruction, decoded);
+    if (instruction_cache_hit) {
+        if (decoded.length == 2U) {
+            ++performance_counters_.fetch.compressed_instructions;
+        } else {
+            ++performance_counters_.fetch.standard_instructions;
+        }
     } else {
-        ++performance_counters_.fetch.standard_instructions;
-        const TranslationResult second_translation = translate(
-            pc + 2U,
+        const TranslationResult first_translation = translate(
+            pc,
             MemoryAccessType::InstructionFetch);
-        if (!second_translation.ready()) {
+        if (!first_translation.ready()) {
             return trap(
-                second_translation.status ==
-                        TranslationStatus::PageFault
+                first_translation.status == TranslationStatus::PageFault
                     ? ExceptionCause::InstructionPageFault
                     : ExceptionCause::InstructionAccessFault,
-                instruction,
-                pc + 2U,
-                second_translation.bus_fault);
+                0,
+                pc,
+                first_translation.bus_fault);
         }
         ++performance_counters_.fetch.halfword_reads;
-        const rv::ReadResult second = bus_->read(
-            second_translation.physical_address,
+        const rv::ReadResult first = bus_->read(
+            first_translation.physical_address,
             rv::AccessWidth::HalfWord,
             rv::AccessKind::InstructionFetch);
-        if (!second.ok()) {
+        if (!first.ok()) {
             return trap(
                 ExceptionCause::InstructionAccessFault,
-                instruction,
-                pc + 2U,
-                second.fault);
+                0,
+                pc,
+                first.fault);
         }
-        instruction |=
-            static_cast<std::uint32_t>(
-                static_cast<std::uint16_t>(second.value))
-            << 16U;
-        decoded = decode(instruction, 4U);
+
+        instruction = static_cast<std::uint16_t>(first.value);
+        bool instruction_cacheable =
+            may_use_instruction_cache &&
+            bus_->instruction_cacheable(
+                first_translation.physical_address);
+        if ((instruction & 0x3U) != 0x3U) {
+            ++performance_counters_.fetch.compressed_instructions;
+            decoded = decode(instruction, 2U);
+        } else {
+            ++performance_counters_.fetch.standard_instructions;
+            const TranslationResult second_translation = translate(
+                pc + 2U,
+                MemoryAccessType::InstructionFetch);
+            if (!second_translation.ready()) {
+                return trap(
+                    second_translation.status ==
+                            TranslationStatus::PageFault
+                        ? ExceptionCause::InstructionPageFault
+                        : ExceptionCause::InstructionAccessFault,
+                    instruction,
+                    pc + 2U,
+                    second_translation.bus_fault);
+            }
+            ++performance_counters_.fetch.halfword_reads;
+            const rv::ReadResult second = bus_->read(
+                second_translation.physical_address,
+                rv::AccessWidth::HalfWord,
+                rv::AccessKind::InstructionFetch);
+            if (!second.ok()) {
+                return trap(
+                    ExceptionCause::InstructionAccessFault,
+                    instruction,
+                    pc + 2U,
+                    second.fault);
+            }
+            instruction |=
+                static_cast<std::uint32_t>(
+                    static_cast<std::uint16_t>(second.value))
+                << 16U;
+            instruction_cacheable =
+                instruction_cacheable &&
+                bus_->instruction_cacheable(
+                    second_translation.physical_address);
+            decoded = decode(instruction, 4U);
+        }
+        if (decoded.valid() && instruction_cacheable) {
+            insert_instruction_cache(pc, instruction, decoded);
+        }
     }
     if (!decoded.valid()) {
         return trap(
@@ -1299,6 +1325,7 @@ StepResult Core::step(const IrqLines& irq_lines)
         break;
     case InstructionKind::FenceI:
         clear_decode_cache(true);
+        clear_instruction_cache(true);
         break;
     case InstructionKind::Csrrw:
     case InstructionKind::Csrrs:
@@ -1425,6 +1452,14 @@ StepResult Core::step(const IrqLines& irq_lines)
                 ? std::nullopt
                 : std::optional<std::uint16_t>{
                       static_cast<std::uint16_t>(rs2)});
+        sfence_instruction_cache(
+            decoded.rs1 == 0U
+                ? std::nullopt
+                : std::optional<Xlen>{rs1},
+            decoded.rs2 == 0U
+                ? std::nullopt
+                : std::optional<std::uint16_t>{
+                      static_cast<std::uint16_t>(rs2)});
         break;
     case InstructionKind::Illegal:
         return trap(
@@ -1513,6 +1548,42 @@ std::size_t Core::tlb_entries() const noexcept
     return tlb_.valid_entries();
 }
 
+std::size_t Core::instruction_cache_entries() const noexcept
+{
+    return static_cast<std::size_t>(std::count_if(
+        instruction_cache_.begin(),
+        instruction_cache_.end(),
+        [this](const InstructionCacheEntry& entry) {
+            if (entry.generation != instruction_cache_generation_) {
+                return false;
+            }
+            const std::uint16_t asid = static_cast<std::uint16_t>(
+                (entry.satp & satp_bits::asid) >> 44U);
+            const Xlen page = entry.virtual_address >> 12U;
+            const std::size_t asid_index =
+                static_cast<std::size_t>(
+                    asid ^ (asid >> 12U)) %
+                instruction_cache_asid_epochs_.size();
+            const std::size_t page_index =
+                static_cast<std::size_t>(
+                    page ^ (page >> 12U) ^ (page >> 24U)) %
+                instruction_cache_page_epochs_.size();
+            const std::size_t asid_page_index =
+                static_cast<std::size_t>(
+                    page ^ (page >> 12U) ^
+                    static_cast<Xlen>(asid) * 0x9E37U) %
+                instruction_cache_asid_page_epochs_.size();
+            return
+                entry.asid_epoch ==
+                    instruction_cache_asid_epochs_[asid_index] &&
+                entry.page_epoch ==
+                    instruction_cache_page_epochs_[page_index] &&
+                entry.asid_page_epoch ==
+                    instruction_cache_asid_page_epochs_[
+                        asid_page_index];
+        }));
+}
+
 void Core::set_execution_mode(ExecutionMode mode) noexcept
 {
     if (execution_mode_ == mode) {
@@ -1521,6 +1592,7 @@ void Core::set_execution_mode(ExecutionMode mode) noexcept
     execution_mode_ = mode;
     tlb_.clear();
     clear_decode_cache(true);
+    clear_instruction_cache(true);
 }
 
 ExecutionMode Core::execution_mode() const noexcept
@@ -1583,6 +1655,149 @@ void Core::clear_decode_cache(bool count_invalidation) noexcept
     if (count_invalidation) {
         ++performance_counters_.decode.invalidations;
     }
+}
+
+bool Core::lookup_instruction_cache(
+    Xlen virtual_address,
+    std::uint32_t& instruction,
+    DecodedInstruction& decoded) noexcept
+{
+    auto& counters = performance_counters_.instruction_cache;
+    ++counters.lookups;
+    const Xlen satp = sanitize_satp(state_.supervisor_csrs.satp);
+    const std::uint16_t asid = static_cast<std::uint16_t>(
+        (satp & satp_bits::asid) >> 44U);
+    const Xlen page = virtual_address >> 12U;
+    const std::size_t asid_index =
+        static_cast<std::size_t>(asid ^ (asid >> 12U)) %
+        instruction_cache_asid_epochs_.size();
+    const std::size_t page_index =
+        static_cast<std::size_t>(
+            page ^ (page >> 12U) ^ (page >> 24U)) %
+        instruction_cache_page_epochs_.size();
+    const std::size_t asid_page_index =
+        static_cast<std::size_t>(
+            page ^ (page >> 12U) ^
+            static_cast<Xlen>(asid) * 0x9E37U) %
+        instruction_cache_asid_page_epochs_.size();
+    const Xlen mixed =
+        (virtual_address >> 1U) ^
+        (virtual_address >> 13U) ^
+        satp ^ (satp >> 17U) ^ (satp >> 37U) ^
+        static_cast<Xlen>(state_.privilege);
+    const std::size_t index =
+        static_cast<std::size_t>(mixed) %
+        instruction_cache_.size();
+    const auto& entry = instruction_cache_[index];
+    if (entry.generation == instruction_cache_generation_ &&
+        entry.virtual_address == virtual_address &&
+        entry.satp == satp &&
+        entry.privilege == state_.privilege &&
+        entry.asid_epoch ==
+            instruction_cache_asid_epochs_[asid_index] &&
+        entry.page_epoch ==
+            instruction_cache_page_epochs_[page_index] &&
+        entry.asid_page_epoch ==
+            instruction_cache_asid_page_epochs_[asid_page_index]) {
+        ++counters.hits;
+        instruction = entry.instruction;
+        decoded = entry.decoded;
+        return true;
+    }
+    ++counters.misses;
+    return false;
+}
+
+void Core::insert_instruction_cache(
+    Xlen virtual_address,
+    std::uint32_t instruction,
+    const DecodedInstruction& decoded) noexcept
+{
+    const Xlen satp = sanitize_satp(state_.supervisor_csrs.satp);
+    const std::uint16_t asid = static_cast<std::uint16_t>(
+        (satp & satp_bits::asid) >> 44U);
+    const Xlen page = virtual_address >> 12U;
+    const std::size_t asid_index =
+        static_cast<std::size_t>(asid ^ (asid >> 12U)) %
+        instruction_cache_asid_epochs_.size();
+    const std::size_t page_index =
+        static_cast<std::size_t>(
+            page ^ (page >> 12U) ^ (page >> 24U)) %
+        instruction_cache_page_epochs_.size();
+    const std::size_t asid_page_index =
+        static_cast<std::size_t>(
+            page ^ (page >> 12U) ^
+            static_cast<Xlen>(asid) * 0x9E37U) %
+        instruction_cache_asid_page_epochs_.size();
+    const Xlen mixed =
+        (virtual_address >> 1U) ^
+        (virtual_address >> 13U) ^
+        satp ^ (satp >> 17U) ^ (satp >> 37U) ^
+        static_cast<Xlen>(state_.privilege);
+    const std::size_t index =
+        static_cast<std::size_t>(mixed) %
+        instruction_cache_.size();
+    instruction_cache_[index] = {
+        .generation = instruction_cache_generation_,
+        .virtual_address = virtual_address,
+        .satp = satp,
+        .privilege = state_.privilege,
+        .asid_epoch = instruction_cache_asid_epochs_[asid_index],
+        .page_epoch = instruction_cache_page_epochs_[page_index],
+        .asid_page_epoch =
+            instruction_cache_asid_page_epochs_[asid_page_index],
+        .instruction = instruction,
+        .decoded = decoded,
+    };
+}
+
+void Core::clear_instruction_cache(bool count_invalidation) noexcept
+{
+    ++instruction_cache_generation_;
+    if (instruction_cache_generation_ == 0U) {
+        instruction_cache_ = {};
+        instruction_cache_asid_epochs_ = {};
+        instruction_cache_page_epochs_ = {};
+        instruction_cache_asid_page_epochs_ = {};
+        instruction_cache_generation_ = 1U;
+    }
+    if (count_invalidation) {
+        ++performance_counters_.instruction_cache.invalidations;
+    }
+}
+
+void Core::sfence_instruction_cache(
+    std::optional<Xlen> virtual_address,
+    std::optional<std::uint16_t> asid) noexcept
+{
+    if (!virtual_address.has_value() && !asid.has_value()) {
+        clear_instruction_cache(true);
+        return;
+    }
+
+    if (virtual_address.has_value() && asid.has_value()) {
+        const Xlen page = *virtual_address >> 12U;
+        const std::size_t index =
+            static_cast<std::size_t>(
+                page ^ (page >> 12U) ^
+                static_cast<Xlen>(*asid) * 0x9E37U) %
+            instruction_cache_asid_page_epochs_.size();
+        ++instruction_cache_asid_page_epochs_[index];
+    } else if (virtual_address.has_value()) {
+        const Xlen page = *virtual_address >> 12U;
+        const std::size_t index =
+            static_cast<std::size_t>(
+                page ^ (page >> 12U) ^ (page >> 24U)) %
+            instruction_cache_page_epochs_.size();
+        ++instruction_cache_page_epochs_[index];
+    } else {
+        const std::size_t index =
+            static_cast<std::size_t>(
+                *asid ^ (*asid >> 12U)) %
+            instruction_cache_asid_epochs_.size();
+        ++instruction_cache_asid_epochs_[index];
+    }
+    ++performance_counters_.instruction_cache.invalidations;
 }
 
 } // namespace rv64

@@ -88,6 +88,10 @@ void print(
         << ", Msteps/s=" << result.million_steps_per_second
         << ", decode-hit=" << result.core.decode.hits
         << ", decode-miss=" << result.core.decode.misses
+        << ", instruction-cache-hit="
+        << result.core.instruction_cache.hits
+        << ", instruction-cache-miss="
+        << result.core.instruction_cache.misses
         << ", fetch-halfwords=" << result.core.fetch.halfword_reads
         << ", translations=" << result.core.mmu.translations
         << ", TLB-hit=" << result.core.mmu.tlb_hits
@@ -116,8 +120,10 @@ int main(int argc, char** argv)
         reference.seconds <= 0.0 ||
         fast.seconds <= 0.0 ||
         reference.core.decode.lookups != 0U ||
-        fast.core.decode.hits == 0U ||
-        fast.core.decode.misses == 0U) {
+        fast.core.instruction_cache.hits == 0U ||
+        fast.core.instruction_cache.misses == 0U ||
+        fast.core.fetch.halfword_reads >=
+            reference.core.fetch.halfword_reads) {
         std::cerr
             << "RV64 performance/reference comparison did not complete\n";
         return 1;

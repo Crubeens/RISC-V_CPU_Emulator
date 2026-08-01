@@ -143,8 +143,10 @@ int main()
     const auto& fast_counters =
         fast.core().performance_counters();
     if (reference_counters.decode.lookups != 0U ||
-        fast_counters.decode.hits == 0U ||
         fast_counters.decode.misses == 0U ||
+        reference_counters.instruction_cache.lookups != 0U ||
+        fast_counters.instruction_cache.hits == 0U ||
+        fast_counters.instruction_cache.misses == 0U ||
         fast.core().snapshot().registers[1] != 16U ||
         fast.core().snapshot().registers[4] != 16U) {
         std::cerr << "RV64 mode-differential coverage was incomplete\n";

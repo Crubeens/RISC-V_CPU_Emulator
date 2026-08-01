@@ -194,6 +194,12 @@ class MemoryBus final : public rv::CpuBus {
         return 0;
     }
 
+    [[nodiscard]] bool instruction_cacheable(
+        rv::PhysAddr address) const noexcept override
+    {
+        return bytes_.contains(address);
+    }
+
   private:
     [[nodiscard]] rv::StoreConditionalResult store_conditional(
         std::uint32_t hart_id,
@@ -951,6 +957,9 @@ void test_core_fetch_load_and_page_fault_integration()
     bus.store_doubleword(data_mapping.leaf_pte, 0U);
     CHECK(core.step().status == rv64::StepStatus::Retired);
     CHECK(core.tlb_entries() == 0U);
+    CHECK(
+        core.performance_counters()
+            .instruction_cache.invalidations >= 1U);
     const auto fault = core.step();
     CHECK(fault.status == rv64::StepStatus::TrapTaken);
     CHECK(fault.trap_value == virtual_data);

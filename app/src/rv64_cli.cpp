@@ -149,6 +149,7 @@ void print_performance_diagnostics(
     const auto& core = machine.core().performance_counters();
     const auto& mmu = core.mmu;
     const auto& decode = core.decode;
+    const auto& instruction_cache = core.instruction_cache;
     const auto& fetch = core.fetch;
     const auto& bus = machine.bus().performance_counters();
     const double steps_per_second =
@@ -167,6 +168,14 @@ void print_performance_diagnostics(
             : 100.0 * static_cast<double>(decode.hits) /
                   static_cast<double>(
                       decode.hits + decode.misses);
+    const double instruction_cache_hit_rate =
+        instruction_cache.hits + instruction_cache.misses == 0U
+            ? 0.0
+            : 100.0 *
+                  static_cast<double>(instruction_cache.hits) /
+                  static_cast<double>(
+                      instruction_cache.hits +
+                      instruction_cache.misses);
     const auto read_count = [&](rv::AccessKind kind) {
         return bus.reads[static_cast<std::size_t>(kind)];
     };
@@ -176,7 +185,7 @@ void print_performance_diagnostics(
 
     std::cerr
         << std::fixed << std::setprecision(3)
-        << "RV64-M8 performance statistics:\n"
+        << "RV64 performance statistics:\n"
         << "  mode="
         << (machine.core().execution_mode() ==
                     ExecutionMode::Fast
@@ -204,6 +213,12 @@ void print_performance_diagnostics(
         << ", miss=" << decode.misses
         << ", hit-rate=" << decode_hit_rate
         << "%, invalidations=" << decode.invalidations << '\n'
+        << "  instruction-cache: hit="
+        << instruction_cache.hits
+        << ", miss=" << instruction_cache.misses
+        << ", hit-rate=" << instruction_cache_hit_rate
+        << "%, invalidations="
+        << instruction_cache.invalidations << '\n'
         << "  bus reads: fetch="
         << read_count(rv::AccessKind::InstructionFetch)
         << ", load=" << read_count(rv::AccessKind::Load)

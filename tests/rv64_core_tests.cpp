@@ -123,6 +123,13 @@ class TestBus final : public rv::CpuBus {
         return 0;
     }
 
+    [[nodiscard]] bool instruction_cacheable(
+        rv::PhysAddr address) const noexcept override
+    {
+        return address >= base &&
+               address - base < bytes_.size();
+    }
+
     void load_program(std::span<const std::uint32_t> program)
     {
         bytes_.fill(0);
@@ -133,6 +140,17 @@ class TestBus final : public rv::CpuBus {
                     static_cast<std::uint8_t>(
                         instruction >> (byte * 8U));
             }
+        }
+    }
+
+    void overwrite_instruction(
+        std::size_t index,
+        std::uint32_t instruction)
+    {
+        for (std::size_t byte = 0; byte < 4U; ++byte) {
+            bytes_[index * 4U + byte] =
+                static_cast<std::uint8_t>(
+                    instruction >> (byte * 8U));
         }
     }
 
@@ -652,19 +670,58 @@ void test_reference_fast_modes_and_performance_counters()
     CHECK(reference_counters.retired_instructions == steps);
     CHECK(fast_counters.retired_instructions == steps);
     CHECK(reference_counters.decode.lookups == 0U);
-    CHECK(fast_counters.decode.lookups == steps);
+    CHECK(
+        fast_counters.instruction_cache.lookups == steps);
+    CHECK(fast_counters.instruction_cache.misses >= 4U);
+    CHECK(
+        fast_counters.instruction_cache.hits >
+        fast_counters.instruction_cache.misses);
+    CHECK(
+        fast_counters.decode.lookups ==
+        fast_counters.instruction_cache.misses);
     CHECK(fast_counters.decode.misses >= 4U);
-    CHECK(fast_counters.decode.hits > fast_counters.decode.misses);
     CHECK(fast.decoded_entries() >= 4U);
+    CHECK(fast.instruction_cache_entries() >= 4U);
     CHECK(
         reference_counters.fetch.instruction_fetches == steps);
     CHECK(fast_counters.fetch.instruction_fetches == steps);
     CHECK(reference_counters.fetch.halfword_reads == steps * 2U);
-    CHECK(fast_counters.fetch.halfword_reads == steps * 2U);
+    CHECK(
+        fast_counters.fetch.halfword_reads ==
+        fast_counters.instruction_cache.misses * 2U);
     CHECK(reference_counters.mmu.translations == steps * 2U);
-    CHECK(fast_counters.mmu.translations == steps * 2U);
+    CHECK(
+        fast_counters.mmu.translations ==
+        fast_counters.instruction_cache.misses * 2U);
     CHECK(reference_counters.mmu.bare_translations == steps * 2U);
-    CHECK(fast_counters.mmu.bare_translations == steps * 2U);
+    CHECK(
+        fast_counters.mmu.bare_translations ==
+        fast_counters.instruction_cache.misses * 2U);
+}
+
+void test_instruction_cache_fence_i_invalidation()
+{
+    constexpr std::uint32_t fence_i = 0x0000100FU;
+    const std::uint32_t program[]{
+        encode_i(1U, 0U, 0U, 1U),
+        fence_i,
+        encode_j(static_cast<std::uint32_t>(-8), 0U),
+    };
+    TestBus bus;
+    bus.load_program(program);
+    rv64::Core core(bus);
+    core.reset({.reset_pc = base});
+
+    CHECK(core.step().status == rv64::StepStatus::Retired);
+    CHECK(core.snapshot().registers[1] == 1U);
+    bus.overwrite_instruction(0U, encode_i(2U, 0U, 0U, 1U));
+    CHECK(core.step().status == rv64::StepStatus::Retired);
+    CHECK(
+        core.performance_counters()
+            .instruction_cache.invalidations == 1U);
+    CHECK(core.step().status == rv64::StepStatus::Retired);
+    CHECK(core.step().status == rv64::StepStatus::Retired);
+    CHECK(core.snapshot().registers[1] == 2U);
 }
 
 } // namespace
@@ -679,6 +736,7 @@ int main()
     test_all_branches_jalr_and_commit_metadata();
     test_environment_and_access_faults();
     test_reference_fast_modes_and_performance_counters();
+    test_instruction_cache_fence_i_invalidation();
 
     if (failures == 0) {
         std::cout << "All independent RV64I core tests passed\n";
