@@ -1,7 +1,10 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <string_view>
+#include <vector>
 
+#include "rv64/platform/device_tree.hpp"
 #include "rv/devices/uart16550.hpp"
 #include "rv/devices/ram.hpp"
 #include "rv/devices/virtio_net.hpp"
@@ -19,6 +22,134 @@ int failures = 0;
             ++failures;                                                      \
         }                                                                    \
     } while (false)
+
+void append_be32(
+    std::vector<std::uint8_t>& bytes,
+    std::uint32_t value)
+{
+    bytes.push_back(static_cast<std::uint8_t>(value >> 24U));
+    bytes.push_back(static_cast<std::uint8_t>(value >> 16U));
+    bytes.push_back(static_cast<std::uint8_t>(value >> 8U));
+    bytes.push_back(static_cast<std::uint8_t>(value));
+}
+
+void overwrite_be32(
+    std::vector<std::uint8_t>& bytes,
+    std::size_t offset,
+    std::uint32_t value)
+{
+    bytes[offset] = static_cast<std::uint8_t>(value >> 24U);
+    bytes[offset + 1U] = static_cast<std::uint8_t>(value >> 16U);
+    bytes[offset + 2U] = static_cast<std::uint8_t>(value >> 8U);
+    bytes[offset + 3U] = static_cast<std::uint8_t>(value);
+}
+
+[[nodiscard]] std::uint64_t read_be64(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t offset)
+{
+    std::uint64_t value = 0U;
+    for (std::size_t index = 0; index < 8U; ++index) {
+        value = (value << 8U) | bytes[offset + index];
+    }
+    return value;
+}
+
+void append_padded_name(
+    std::vector<std::uint8_t>& bytes,
+    std::string_view name)
+{
+    bytes.insert(bytes.end(), name.begin(), name.end());
+    bytes.push_back(0U);
+    while ((bytes.size() % 4U) != 0U) {
+        bytes.push_back(0U);
+    }
+}
+
+[[nodiscard]] std::vector<std::uint8_t> make_test_device_tree()
+{
+    constexpr std::size_t header_size = 40U;
+    constexpr std::size_t reservation_size = 16U;
+    std::vector<std::uint8_t> blob(
+        header_size + reservation_size,
+        0U);
+    const std::size_t structure_offset = blob.size();
+
+    append_be32(blob, 1U);
+    append_padded_name(blob, "");
+    append_be32(blob, 1U);
+    append_padded_name(blob, "memory@80000000");
+    append_be32(blob, 3U);
+    append_be32(blob, 16U);
+    append_be32(blob, 0U);
+    append_be32(blob, 0U);
+    append_be32(blob, 0x80000000U);
+    append_be32(blob, 0U);
+    append_be32(blob, 0x10000000U);
+    append_be32(blob, 2U);
+    append_be32(blob, 2U);
+    append_be32(blob, 9U);
+
+    const std::size_t structure_size =
+        blob.size() - structure_offset;
+    const std::size_t strings_offset = blob.size();
+    append_padded_name(blob, "reg");
+
+    overwrite_be32(blob, 0U, 0xD00DFEEDU);
+    overwrite_be32(
+        blob,
+        4U,
+        static_cast<std::uint32_t>(blob.size()));
+    overwrite_be32(
+        blob,
+        8U,
+        static_cast<std::uint32_t>(structure_offset));
+    overwrite_be32(
+        blob,
+        12U,
+        static_cast<std::uint32_t>(strings_offset));
+    overwrite_be32(blob, 16U, header_size);
+    overwrite_be32(blob, 20U, 17U);
+    overwrite_be32(blob, 24U, 16U);
+    overwrite_be32(blob, 28U, 0U);
+    overwrite_be32(
+        blob,
+        32U,
+        static_cast<std::uint32_t>(blob.size() - strings_offset));
+    overwrite_be32(
+        blob,
+        36U,
+        static_cast<std::uint32_t>(structure_size));
+    return blob;
+}
+
+void test_device_tree_memory_patch()
+{
+    auto blob = make_test_device_tree();
+    constexpr std::uint64_t new_size = 512ULL * 1024ULL * 1024ULL;
+    const auto result = rv64::platform::patch_device_tree_memory(
+        blob,
+        rv64::platform::address_map::dram_base,
+        new_size);
+    CHECK(result.ok());
+    constexpr std::size_t memory_size_offset = 104U;
+    CHECK(read_be64(blob, memory_size_offset) == new_size);
+
+    CHECK(
+        rv64::platform::patch_device_tree_memory(
+            blob,
+            rv64::platform::address_map::dram_base + 1U,
+            new_size).error ==
+        rv64::platform::DeviceTreeMemoryPatchError::UnexpectedMemoryLayout);
+
+    blob[0] = 0U;
+    CHECK(
+        rv64::platform::patch_device_tree_memory(
+            blob,
+            rv64::platform::address_map::dram_base,
+            new_size).error ==
+        rv64::platform::DeviceTreeMemoryPatchError::InvalidBlob);
+}
 
 void test_machine_executes_from_shared_physical_bus()
 {
@@ -228,6 +359,7 @@ void test_rv64_only_network_device_and_plic_wiring()
 
 int main()
 {
+    test_device_tree_memory_patch();
     test_machine_executes_from_shared_physical_bus();
     test_boot_layout_and_64_bit_boot_registers();
     test_boot_rejects_invalid_layouts();

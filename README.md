@@ -12,7 +12,7 @@
   LP64 Buildroot 与 LP64D Debian ext4、SDL、独立性能统计、参考/快速执行模式，以及
   RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS、Goldfish RTC 和
   完整的 RV64F/RV64D 标量浮点实现。
-- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 132。
+- Debug 与 Release 自动测试均覆盖两种架构；当前测试总数为 133。
 
 ## 架构边界
 
@@ -115,7 +115,7 @@ RV32 Linux：
 RV64 Linux：
 
 ```powershell
-.\build\release\riscv_emulator.exe --cpu rv64 --boot-disk `
+.\build\release\riscv_emulator.exe --cpu rv64 --ram-mib 512 --boot-disk `
   .\boot-images\opensbi-v1.8.1-rv64-fw_jump.bin `
   .\boot-images\linux-v6.12.96-rv64imac-Image `
   .\build\release\images\rv64-virt.dtb `
@@ -131,7 +131,7 @@ Debian 13 riscv64 APT 镜像可由
 `systemd` PID 1、shell、`dpkg`、`apt` 可执行文件和 DHCP。使用：
 
 ```powershell
-.\build\release\riscv_emulator.exe --cpu rv64 --boot-disk `
+.\build\release\riscv_emulator.exe --cpu rv64 --ram-mib 512 --boot-disk `
   .\boot-images\opensbi-v1.8.1-rv64-fw_jump.bin `
   .\boot-images\linux-v6.12.96-rv64gc-Image `
   .\build\release\images\rv64-virt.dtb `
@@ -140,10 +140,15 @@ Debian 13 riscv64 APT 镜像可由
 
 公网 HTTPS、软件安装和磁盘持久化的最终验收属于 M11。
 
+RV64 的 `--ram-mib <MiB>` 必须放在具体命令之前，可选择 64–4096 MiB，
+省略时为 256 MiB。模拟器会同步修改传入 DTB 的 64 位内存范围；损坏的 DTB、
+缺失的内存节点或地址布局不匹配会直接报错。当前 RAM 使用连续宿主内存，配置值
+应根据宿主机可用内存选择，Debian 建议从 512 MiB 开始。
+
 在 `--boot-disk` 前增加 `--gui` 可启用 SDL 窗口，例如：
 
 ```powershell
-.\build\release\riscv_emulator.exe --cpu rv64 --gui --boot-disk `
+.\build\release\riscv_emulator.exe --cpu rv64 --ram-mib 512 --gui --boot-disk `
   .\boot-images\opensbi-v1.8.1-rv64-fw_jump.bin `
   .\boot-images\linux-v6.12.96-rv64imac-Image `
   .\build\release\images\rv64-virt.dtb `
@@ -167,6 +172,6 @@ Debian 13 riscv64 APT 镜像可由
 - RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 - RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
 
-RV64-M1 至 M10 与 M11.1 已完成。当前继续 RV64-M11 的可配置 RAM 和 APT
+RV64-M1 至 M10 与 M11.1–M11.2 已完成。当前继续 RV64-M11 的 APT 与持久化
 验收；RV64 对外 ISA 已更新为 `rv64imafdc_zicntr_zicsr_zifencei`，既有
 M1–M8 验收边界保持冻结。

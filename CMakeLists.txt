@@ -339,6 +339,7 @@ rv_enable_warnings(rv32_platform)
 
 add_library(
     rv64_platform
+    platform64/src/device_tree.cpp
     platform64/src/machine.cpp)
 
 target_include_directories(
@@ -1804,5 +1805,24 @@ if(RV_BUILD_TESTS)
             PROPERTIES
                 PASS_REGULAR_EXPRESSION
                     "RV64 virtual disk loaded")
+
+        add_test(
+            NAME rv64_configurable_ram_smoke
+            COMMAND
+                riscv_emulator
+                --cpu
+                rv64
+                --ram-mib
+                512
+                --load-images
+                "${RV32_BOOT_SMOKE_BIN}"
+                "${RV32_BAREMETAL_BIN}"
+                "${RV64_VIRT_DTB}")
+        set_tests_properties(
+            rv64_configurable_ram_smoke
+            PROPERTIES
+                PASS_REGULAR_EXPRESSION
+                    "RAM=512 MiB"
+                TIMEOUT 30)
     endif()
 endif()

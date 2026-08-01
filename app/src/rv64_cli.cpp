@@ -5,6 +5,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -29,6 +30,7 @@
 #include "rv/devices/uart16550.hpp"
 #include "rv/devices/virtio_block.hpp"
 #include "rv/devices/virtio_net.hpp"
+#include "rv64/platform/device_tree.hpp"
 #include "rv64/platform/machine.hpp"
 
 #if defined(RV_ENABLE_NETWORK)
@@ -48,6 +50,9 @@ constexpr std::uint64_t default_boot_step_limit = 20'000'000ULL;
 constexpr std::uint64_t unlimited_step_limit =
     std::numeric_limits<std::uint64_t>::max();
 constexpr std::uint64_t console_poll_interval = 1024ULL;
+constexpr std::uint64_t bytes_per_mib = 1024ULL * 1024ULL;
+constexpr std::uint64_t minimum_ram_mib = 64ULL;
+constexpr std::uint64_t maximum_ram_mib = 4096ULL;
 
 [[nodiscard]] bool read_image(
     const char* path,
@@ -248,6 +253,52 @@ void print_performance_diagnostics(
            limit != 0U;
 }
 
+[[nodiscard]] bool parse_ram_size(
+    std::string_view text,
+    std::uint64_t& size)
+{
+    std::uint64_t mib = 0U;
+    if (!parse_limit(text, mib) ||
+        mib < minimum_ram_mib ||
+        mib > maximum_ram_mib) {
+        return false;
+    }
+    size = mib * bytes_per_mib;
+    return true;
+}
+
+[[nodiscard]] bool configure_device_tree(
+    std::vector<std::uint8_t>& device_tree,
+    std::uint64_t ram_size)
+{
+    const auto result = platform::patch_device_tree_memory(
+        device_tree,
+        platform::address_map::dram_base,
+        ram_size);
+    if (result.ok()) {
+        return true;
+    }
+    std::cerr
+        << "Cannot configure RV64 device-tree memory: "
+        << platform::device_tree_memory_patch_error_message(result.error)
+        << '\n';
+    return false;
+}
+
+[[nodiscard]] std::unique_ptr<platform::Machine> create_machine(
+    const platform::MachineConfig& config,
+    std::uint64_t ram_size)
+{
+    try {
+        return std::make_unique<platform::Machine>(config);
+    } catch (const std::exception& error) {
+        std::cerr
+            << "Cannot allocate " << ram_size / bytes_per_mib
+            << " MiB of RV64 guest RAM: " << error.what() << '\n';
+        return nullptr;
+    }
+}
+
 int run_smoke()
 {
     platform::Machine machine({
@@ -285,7 +336,10 @@ int run_smoke()
     return 0;
 }
 
-int run_raw(int argc, char** argv)
+int run_raw(
+    int argc,
+    char** argv,
+    std::uint64_t ram_size)
 {
     if (argc < 3 || argc > 4) {
         std::cerr
@@ -304,9 +358,14 @@ int run_raw(int argc, char** argv)
     if (!read_image(argv[2], image)) {
         return 3;
     }
-    platform::Machine machine({
+    auto machine_owner = create_machine({
+        .ram_size = ram_size,
         .enable_framebuffer = false,
-    });
+    }, ram_size);
+    if (machine_owner == nullptr) {
+        return 4;
+    }
+    auto& machine = *machine_owner;
     if (machine.load_image(
             image,
             platform::address_map::dram_base) != rv::BusFault::None) {
@@ -348,7 +407,10 @@ int run_raw(int argc, char** argv)
     return 6;
 }
 
-int load_images(int argc, char** argv)
+int load_images(
+    int argc,
+    char** argv,
+    std::uint64_t ram_size)
 {
     if (argc != 5) {
         std::cerr
@@ -364,8 +426,17 @@ int load_images(int argc, char** argv)
         !read_image(argv[4], device_tree)) {
         return 3;
     }
+    if (!configure_device_tree(device_tree, ram_size)) {
+        return 4;
+    }
 
-    platform::Machine machine;
+    auto machine_owner = create_machine({
+        .ram_size = ram_size,
+    }, ram_size);
+    if (machine_owner == nullptr) {
+        return 4;
+    }
+    auto& machine = *machine_owner;
     const auto result = machine.load_boot({
         .firmware = firmware,
         .kernel = kernel,
@@ -387,7 +458,9 @@ int load_images(int argc, char** argv)
         << "\n  dtb=0x" << result.layout.device_tree_address
         << "\n  a0=0x" << state.registers[10]
         << ", a1=0x" << state.registers[11]
-        << std::dec << '\n';
+        << std::dec
+        << "\n  RAM=" << ram_size / bytes_per_mib
+        << " MiB (DTB synchronized)\n";
     return 0;
 }
 
@@ -395,7 +468,8 @@ int run_boot(
     int argc,
     char** argv,
     bool use_virtual_disk,
-    bool use_gui)
+    bool use_gui,
+    std::uint64_t ram_size)
 {
     const int required_arguments = use_virtual_disk ? 6 : 5;
     if (argc != required_arguments &&
@@ -430,10 +504,14 @@ int run_boot(
         !read_image(argv[4], device_tree)) {
         return 3;
     }
+    if (!configure_device_tree(device_tree, ram_size)) {
+        return 4;
+    }
 
     const char* virtual_disk_path = nullptr;
     std::shared_ptr<rv::devices::BlockStorage> virtual_disk;
     platform::MachineConfig machine_config;
+    machine_config.ram_size = ram_size;
     if (use_virtual_disk) {
         virtual_disk_path = argv[5];
         try {
@@ -468,7 +546,11 @@ int run_boot(
     }
 #endif
 
-    platform::Machine machine(machine_config);
+    auto machine_owner = create_machine(machine_config, ram_size);
+    if (machine_owner == nullptr) {
+        return 4;
+    }
+    auto& machine = *machine_owner;
 #if defined(RV_ENABLE_NETWORK)
     machine.virtio_net().set_backend(&network_backend);
 #endif
@@ -501,6 +583,8 @@ int run_boot(
         << ", a0=0x" << initial.registers[10]
         << ", a1=0x" << initial.registers[11]
         << std::dec
+        << "\n  RAM         " << ram_size / bytes_per_mib
+        << " MiB (DTB synchronized)"
         << '\n';
     if (use_virtual_disk) {
         std::cout
@@ -645,30 +729,53 @@ int run_boot(
 
 int run_cli(int argc, char** argv)
 {
+    std::uint64_t ram_size = platform::address_map::default_dram_size;
+    if (argc >= 2 &&
+        std::string_view(argv[1]) == "--ram-mib") {
+        if (argc < 3 || !parse_ram_size(argv[2], ram_size)) {
+            std::cerr
+                << "RV64 --ram-mib requires an integer from "
+                << minimum_ram_mib << " through "
+                << maximum_ram_mib << '\n';
+            return 2;
+        }
+        argc -= 2;
+        argv += 2;
+    }
     if (argc == 1) {
         return run_smoke();
     }
     const std::string_view command = argv[1];
     if (command == "--run-raw") {
-        return run_raw(argc, argv);
+        return run_raw(argc, argv, ram_size);
     }
     if (command == "--load-images") {
-        return load_images(argc, argv);
+        return load_images(argc, argv, ram_size);
     }
     if (command == "--boot") {
-        return run_boot(argc, argv, false, false);
+        return run_boot(argc, argv, false, false, ram_size);
     }
     if (command == "--boot-disk") {
-        return run_boot(argc, argv, true, false);
+        return run_boot(argc, argv, true, false, ram_size);
     }
     if (command == "--gui") {
         if (argc >= 3 &&
             std::string_view(argv[2]) == "--boot") {
-            return run_boot(argc - 1, argv + 1, false, true);
+            return run_boot(
+                argc - 1,
+                argv + 1,
+                false,
+                true,
+                ram_size);
         }
         if (argc >= 3 &&
             std::string_view(argv[2]) == "--boot-disk") {
-            return run_boot(argc - 1, argv + 1, true, true);
+            return run_boot(
+                argc - 1,
+                argv + 1,
+                true,
+                true,
+                ram_size);
         }
         std::cerr
             << "RV64 --gui must be followed by "
@@ -678,18 +785,23 @@ int run_cli(int argc, char** argv)
     std::cerr
         << "usage:\n"
         << "  riscv_emulator --cpu rv64\n"
-        << "  riscv_emulator --cpu rv64 --run-raw "
+        << "  riscv_emulator --cpu rv64 [--ram-mib <MiB>] "
+        << "--run-raw "
         << "<image.bin> [max-steps]\n"
-        << "  riscv_emulator --cpu rv64 --load-images "
+        << "  riscv_emulator --cpu rv64 [--ram-mib <MiB>] "
+        << "--load-images "
         << "<firmware.bin> <kernel> <board.dtb>\n"
-        << "  riscv_emulator --cpu rv64 --boot "
+        << "  riscv_emulator --cpu rv64 [--ram-mib <MiB>] --boot "
         << "<opensbi.bin> <kernel> <board.dtb> [max-steps]\n"
-        << "  riscv_emulator --cpu rv64 --boot-disk "
+        << "  riscv_emulator --cpu rv64 [--ram-mib <MiB>] "
+        << "--boot-disk "
         << "<opensbi.bin> <kernel> <board.dtb> "
         << "<disk-image> [max-steps]\n"
-        << "  riscv_emulator --cpu rv64 --gui --boot "
+        << "  riscv_emulator --cpu rv64 [--ram-mib <MiB>] "
+        << "--gui --boot "
         << "<opensbi.bin> <kernel> <board.dtb> [max-steps]\n"
-        << "  riscv_emulator --cpu rv64 --gui --boot-disk "
+        << "  riscv_emulator --cpu rv64 [--ram-mib <MiB>] "
+        << "--gui --boot-disk "
         << "<opensbi.bin> <kernel> <board.dtb> "
         << "<disk-image> [max-steps]\n";
     return 2;
