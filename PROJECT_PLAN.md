@@ -62,8 +62,8 @@
   满足使用官方系统级软件源的最终目标。
 - 架构无关的 VirtIO Net 设备实现可以位于 `devices/`，但只由 RV64 平台
   装配。RV32 Machine、DTS、内核配置和验收镜像保持不变。
-- 联网、Debian 官方仓库和 APT 的唯一实施主线见
-  [`core64/RV64_M9_M11_PLAN.md`](core64/RV64_M9_M11_PLAN.md)。
+- 联网、Debian 官方仓库、APT 和后续性能阶段见统一的
+  [`core64/PROJECT_PLAN.md`](core64/PROJECT_PLAN.md)。
 
 ## 3. 不可破坏的架构边界
 

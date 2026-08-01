@@ -8,7 +8,7 @@
 
 - RV32：M9 基线，支持 RV32IMAC、M/S/U、Sv32、OpenSBI、Linux、
   Buildroot ext4 根文件系统和 SDL 图形界面。
-- RV64：M10 完成，支持 RV64GC、M/S/U、Sv39、OpenSBI、Linux、
+- RV64：M11 完成并进入 M12 性能优化，支持 RV64GC、M/S/U、Sv39、OpenSBI、Linux、
   LP64 Buildroot 与 LP64D Debian ext4、SDL、独立性能统计、参考/快速执行模式，以及
   RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS、Goldfish RTC 和
   完整的 RV64F/RV64D 标量浮点实现。
@@ -26,6 +26,11 @@
 | `platform64/` | RV64 地址布局、设备树、启动装载和 Machine |
 | `app/` | 统一命令行入口、终端和 SDL 前端 |
 | `tests/` | 两种架构的单元、裸机、差分、设备树和整机测试 |
+| `configs/` | 已启动成功的 Linux/Buildroot 配置快照与重建说明 |
+| `scripts/` | Debian 镜像生成和客户机验收脚本 |
+| `docs/` | 启动、软件栈、性能验收和学习资料索引 |
+| `third_party/` | 固定版本的架构测试与 SoftFloat 适配文件 |
+| `prestudy/` | 冻结的前置学习资料，不参与正式构建 |
 
 CPU 核心只依赖抽象总线，不包含 SDL，也不依赖任何具体外设实现。
 RV32 与 RV64 不共享译码、执行、CSR、Trap 或 MMU 代码，避免通过运行时
@@ -93,6 +98,7 @@ RV64 裸机镜像由 WSL 中的 RISC-V Linux 工具链生成，步骤见
 已验证的 Linux/Buildroot 完整配置与重建命令见
 [`configs/README.md`](configs/README.md)，M8 计数和验收说明见
 [`docs/RV64-M8性能与验收.md`](docs/RV64-M8性能与验收.md)。
+全部说明入口见 [`docs/README.md`](docs/README.md)。
 
 ## 运行
 
@@ -167,14 +173,13 @@ RV64 的 `--ram-mib <MiB>` 必须放在具体命令之前，可选择 64–4096 
 - `boot-images/` 保存外部编译得到的持久镜像，不属于 `build/`，
   重新配置或清理 CMake 构建目录不会覆盖它。
 
-完整启动命令也记录在 [`docs/启动命令.txt`](docs/启动命令.txt)。
+完整启动命令见 [`docs/BOOT.md`](docs/BOOT.md)。
 
 ## 阶段计划
 
 - RV32 冻结计划：[PROJECT_PLAN.md](PROJECT_PLAN.md)
-- RV64 M1–M8 冻结计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
-- RV64 M9–M11 当前主线：[core64/RV64_M9_M11_PLAN.md](core64/RV64_M9_M11_PLAN.md)
+- RV64 M1–M12 统一计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 
 RV64-M1 至 M11 已完成。M11.3 完成公网 APT 与磁盘持久化主链路，M11.4
-补齐确定失败路径；RV64 对外 ISA 为 `rv64imafdc_zicntr_zicsr_zifencei`，既有
-M1–M8 验收边界保持冻结。
+补齐确定失败路径；当前进入 M12 性能优化。RV64 对外 ISA 为
+`rv64imafdc_zicntr_zicsr_zifencei`，既有架构语义保持冻结。

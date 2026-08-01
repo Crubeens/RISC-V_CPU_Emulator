@@ -65,4 +65,4 @@ reset extension. The generated files are placed in `build/<config>/boot64/`.
 
 The complete Linux acceptance path uses the persistent images in
 `boot-images/` and the generated `build/<config>/images/rv64-virt.dtb`.
-See `docs/启动命令.txt` for the exact command.
+See [`docs/BOOT.md`](../../docs/BOOT.md) for the exact command.

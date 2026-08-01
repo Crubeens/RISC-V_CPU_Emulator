@@ -184,8 +184,54 @@ UART、Framebuffer、虚拟磁盘回写及 Debug/Release 全量回归验收。
 - RV32 Release 快速基准约 23.10 Msteps/s，未因 RV64 M8 发生代码路径退化。
 - Debug 与 Release 均为 102/102 通过。
 
-## M8 之后
+## RV64-M9：网络与实时时钟
 
-RV64-M1 至 M8 的计划和验收记录在此冻结。网络、RV64F/RV64D、Debian APT
-和资源扩展的唯一后续计划见
-[`RV64_M9_M11_PLAN.md`](RV64_M9_M11_PLAN.md)。
+状态：已完成。
+
+- 增加架构无关 VirtIO Net 设备、RV64 平台装配、PLIC IRQ 与 DTS 节点；
+- 宿主侧使用 libslirp 用户态 NAT，CPU 和设备层不依赖宿主网络 API；
+- 增加 Goldfish RTC；RV32 不装配网卡，两个 CPU 保持解耦；
+- Buildroot 已验证 DHCP、DNS、网关、TCP/UDP 和网络中断。
+
+## RV64-M10：RV64GC 与 Debian 软件基线
+
+状态：已完成。
+
+- 完成 RV64F/RV64D 浮点状态、算术、转换、访存、CSR 与异常语义；
+- 通过官方 RV64UF/RV64UD 架构测试、快速/参考差分和 Spike 差分；
+- 运行 Debian 13 riscv64、LP64D、systemd、动态加载器、shell 和 APT；
+- 保留 RV64IMAC Buildroot 作为无 F/D 的快速系统回归基线。
+
+## RV64-M11：资源配置、APT 与持久化
+
+状态：已完成（M11.1–M11.4）。
+
+- VirtIO Block 使用文件后端，不再将大磁盘整盘复制进宿主内存；
+- `--ram-mib` 支持 64–4096 MiB，并在启动前同步修改 RV64 DTB；
+- 修复 Windows libslirp 空轮询回调崩溃，并以分批 `select()` 完成 HTTPS；
+- Debian 官方源完成 APT 更新、安装、运行、升级、重启持久化与卸载；
+- 断网、无效源、TLS 公钥错误、空间不足和损坏包均确定失败，dpkg 数据库
+  保持完整；
+- Debug/Release 133/133 通过，真实 APT 验收期间网络丢包与轮询错误均为 0。
+
+## RV64-M12：CPU 性能优化
+
+状态：进行中。
+
+目标是在不改变架构语义、异常精度或 RV32 实现的前提下，提高 OpenSBI、Linux、
+Debian 和 Framebuffer 工作负载的 RV64 吞吐。
+
+实施边界：
+
+- 每项优化必须保留 Reference/Fast 逐步差分与官方架构测试；
+- 不缓存不可缓存设备区，不跳过地址翻译、权限、A/D 位、Trap 或中断检查；
+- `FENCE.I`、`SFENCE.VMA`、SATP、特权级和自修改代码必须有确定失效语义；
+- 先以可重复微基准确认热点，再用 Linux 启动统计验证真实收益；
+- 每个优化子阶段单独提交，若无稳定收益则撤销该优化。
+
+计划：
+
+1. M12.1：为 RV64 增加带地址空间与特权上下文的指令前端缓存，减少高命中
+   Linux 代码路径中的重复翻译、总线读取和译码；
+2. M12.2：减少 Machine 每步无变化设备轮询与中断聚合开销；
+3. M12.3：依据性能计数继续处理 MMU、总线或指令执行热点，并完成 Linux 对比。
