@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -53,7 +54,7 @@ enum class ExecutionMode : std::uint8_t {
 
 class Core {
   public:
-    explicit Core(rv::CpuBus& bus) noexcept;
+    explicit Core(rv::CpuBus& bus);
 
     void reset(const ResetConfig& config = {}) noexcept;
     [[nodiscard]] StepResult step(const IrqLines& irq_lines = {});
@@ -75,7 +76,7 @@ class Core {
 
   private:
     static constexpr std::size_t decode_cache_entries = 1024U;
-    static constexpr std::size_t instruction_cache_entry_count = 4096U;
+    static constexpr std::size_t instruction_cache_entry_count = 16384U;
     static constexpr std::size_t instruction_cache_epoch_count = 4096U;
 
     struct DecodeCacheEntry {
@@ -119,10 +120,7 @@ class Core {
     IrqLines sampled_irq_lines_{};
     Sv39Tlb tlb_{};
     std::array<DecodeCacheEntry, decode_cache_entries> decode_cache_{};
-    std::array<
-        InstructionCacheEntry,
-        instruction_cache_entry_count>
-        instruction_cache_{};
+    std::unique_ptr<InstructionCacheEntry[]> instruction_cache_;
     std::array<std::uint64_t, instruction_cache_epoch_count>
         instruction_cache_asid_epochs_{};
     std::array<std::uint64_t, instruction_cache_epoch_count>

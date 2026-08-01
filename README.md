@@ -8,7 +8,7 @@
 
 - RV32：M9 基线，支持 RV32IMAC、M/S/U、Sv32、OpenSBI、Linux、
   Buildroot ext4 根文件系统和 SDL 图形界面。
-- RV64：M11 完成并进入 M12 性能优化，支持 RV64GC、M/S/U、Sv39、OpenSBI、Linux、
+- RV64：M12 性能优化已完成，支持 RV64GC、M/S/U、Sv39、OpenSBI、Linux、
   LP64 Buildroot 与 LP64D Debian ext4、SDL、独立性能统计、参考/快速执行模式，以及
   RV64 专用的 VirtIO 网络、libslirp NAT/DHCP/DNS、Goldfish RTC 和
   完整的 RV64F/RV64D 标量浮点实现。
@@ -182,5 +182,6 @@ RV64 的 `--ram-mib <MiB>` 必须放在具体命令之前，可选择 64–4096 
 - RV64 M1–M12 统一计划：[core64/PROJECT_PLAN.md](core64/PROJECT_PLAN.md)
 
 RV64-M1 至 M11 已完成。M11.3 完成公网 APT 与磁盘持久化主链路，M11.4
-补齐确定失败路径；当前进入 M12 性能优化。RV64 对外 ISA 为
+补齐确定失败路径；M12 已完成指令前端缓存、网络轮询合并和真实 Linux 基准优化。
+RV64 对外 ISA 为
 `rv64imafdc_zicntr_zicsr_zifencei`，既有架构语义保持冻结。

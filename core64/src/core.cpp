@@ -105,7 +105,11 @@ namespace {
 
 } // namespace
 
-Core::Core(rv::CpuBus& bus) noexcept : bus_(&bus)
+Core::Core(rv::CpuBus& bus)
+    : bus_(&bus),
+      instruction_cache_(
+          std::make_unique<InstructionCacheEntry[]>(
+              instruction_cache_entry_count))
 {
     reset();
 }
@@ -1551,8 +1555,8 @@ std::size_t Core::tlb_entries() const noexcept
 std::size_t Core::instruction_cache_entries() const noexcept
 {
     return static_cast<std::size_t>(std::count_if(
-        instruction_cache_.begin(),
-        instruction_cache_.end(),
+        instruction_cache_.get(),
+        instruction_cache_.get() + instruction_cache_entry_count,
         [this](const InstructionCacheEntry& entry) {
             if (entry.generation != instruction_cache_generation_) {
                 return false;
@@ -1687,7 +1691,7 @@ bool Core::lookup_instruction_cache(
         static_cast<Xlen>(state_.privilege);
     const std::size_t index =
         static_cast<std::size_t>(mixed) %
-        instruction_cache_.size();
+        instruction_cache_entry_count;
     const auto& entry = instruction_cache_[index];
     if (entry.generation == instruction_cache_generation_ &&
         entry.virtual_address == virtual_address &&
@@ -1736,7 +1740,7 @@ void Core::insert_instruction_cache(
         static_cast<Xlen>(state_.privilege);
     const std::size_t index =
         static_cast<std::size_t>(mixed) %
-        instruction_cache_.size();
+        instruction_cache_entry_count;
     instruction_cache_[index] = {
         .generation = instruction_cache_generation_,
         .virtual_address = virtual_address,
@@ -1755,7 +1759,10 @@ void Core::clear_instruction_cache(bool count_invalidation) noexcept
 {
     ++instruction_cache_generation_;
     if (instruction_cache_generation_ == 0U) {
-        instruction_cache_ = {};
+        std::fill_n(
+            instruction_cache_.get(),
+            instruction_cache_entry_count,
+            InstructionCacheEntry{});
         instruction_cache_asid_epochs_ = {};
         instruction_cache_page_epochs_ = {};
         instruction_cache_asid_page_epochs_ = {};
