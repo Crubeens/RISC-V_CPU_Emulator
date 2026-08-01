@@ -62,7 +62,8 @@ Debian 官方 riscv64 使用 RV64GC/LP64D。RV64-M10 已完成完整 F/D 标量
 实现、官方架构测试、Spike 差分和 RV64GC ISA 宣告；已验证动态加载器、
 systemd PID 1、shell、apt 可执行文件与 DHCP。RV64-M11.3 已通过 Debian
 官方 HTTPS 源完成 apt update、包安装/运行/升级、关机持久化、再次启动、
-卸载和损坏包拒绝验收。详细记录见 core64/RV64_M9_M11_PLAN.md。
+卸载和损坏包拒绝验收。M11.4 又覆盖断网、错误源、TLS 公钥错误与空间不足，
+并在失败后复查 dpkg 数据库。详细记录见 core64/RV64_M9_M11_PLAN.md。
 
 历史参考软件仓库：
 https://github.com/bane9/rv64gc-emu-software

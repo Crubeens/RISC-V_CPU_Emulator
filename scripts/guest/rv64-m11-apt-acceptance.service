@@ -2,7 +2,7 @@
 Description=RV64 M11 APT and persistence acceptance
 Wants=network-online.target
 After=network-online.target
-ConditionPathExists=!/var/lib/rv64-m11/phase2-complete
+ConditionPathExists=!/var/lib/rv64-m11/phase3-complete
 
 [Service]
 Type=oneshot

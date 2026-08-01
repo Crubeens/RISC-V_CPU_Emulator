@@ -4,6 +4,7 @@ set -eu
 state_directory=/var/lib/rv64-m11
 phase_one_marker="${state_directory}/phase1-complete"
 phase_two_marker="${state_directory}/phase2-complete"
+phase_three_marker="${state_directory}/phase3-complete"
 checkpoint_file="${state_directory}/checkpoint"
 
 mkdir -p "${state_directory}"
@@ -53,17 +54,143 @@ finish_and_power_off()
     sync
     echo "RV64-M11: requesting clean power off"
     if [ "${direct_init}" = true ]; then
-        # PID 1 bypasses systemd's normal shutdown transaction.  Remounting
-        # root read-only commits the ext4 journal before the forced poweroff.
-        mount -o remount,ro / || true
+        # This acceptance-only PID 1 has no systemd shutdown transaction.
+        # Sync the journal, then invoke the kernel poweroff path directly.
         systemctl poweroff --force --force || reboot -f
     else
         systemctl poweroff --no-block
     fi
 }
 
-if [ -e "${phase_two_marker}" ]; then
+require_public_dns()
+{
+    dns_attempt=0
+    while [ "${dns_attempt}" -lt 12 ]; do
+        if getent ahostsv4 deb.debian.org >/dev/null 2>&1; then
+            return 0
+        fi
+        dns_attempt=$((dns_attempt + 1))
+        sleep 5
+    done
+    echo "RV64-M11: public DNS precondition did not recover" >&2
+    return 1
+}
+
+if [ -e "${phase_three_marker}" ]; then
     echo "RV64-M11: acceptance already complete"
+    finish_and_power_off
+    exit 0
+fi
+
+if [ -e "${phase_two_marker}" ]; then
+    echo "RV64-M11 PHASE3 START"
+    fault_root=/run/rv64-m11-faults
+    source_file="${fault_root}/source.list"
+    lists_directory="${fault_root}/lists"
+    cache_directory="${fault_root}/cache"
+    mkdir -p \
+        "${lists_directory}/partial" \
+        "${cache_directory}/archives/partial"
+    printf '%s\n' \
+        'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian trixie main' \
+        >"${source_file}"
+
+    record_checkpoint disconnected-source-start
+    if apt_get \
+        -o Dir::Etc::sourcelist="${source_file}" \
+        -o Dir::Etc::sourceparts=- \
+        -o Dir::State::lists="${lists_directory}" \
+        -o Dir::Cache="${cache_directory}" \
+        -o Acquire::Retries=0 \
+        -o Acquire::https::Timeout=5 \
+        -o Acquire::https::Proxy=http://127.0.0.1:9 \
+        update -o APT::Update::Error-Mode=any; then
+        echo "RV64-M11: disconnected APT update unexpectedly succeeded" >&2
+        finish_and_power_off
+        exit 1
+    fi
+    echo "RV64-M11 DISCONNECTED SOURCE REJECTED"
+
+    rm -rf "${lists_directory}" "${cache_directory}"
+    mkdir -p \
+        "${lists_directory}/partial" \
+        "${cache_directory}/archives/partial"
+    printf '%s\n' \
+        'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian rv64-m11-no-such-suite main' \
+        >"${source_file}"
+    record_checkpoint invalid-source-start
+    if ! require_public_dns; then
+        finish_and_power_off
+        exit 1
+    fi
+    invalid_source_log="${fault_root}/invalid-source.log"
+    if apt_get \
+        -o Dir::Etc::sourcelist="${source_file}" \
+        -o Dir::Etc::sourceparts=- \
+        -o Dir::State::lists="${lists_directory}" \
+        -o Dir::Cache="${cache_directory}" \
+        -o Acquire::Retries=0 \
+        update -o APT::Update::Error-Mode=any \
+        >"${invalid_source_log}" 2>&1; then
+        echo "RV64-M11: invalid Debian suite unexpectedly succeeded" >&2
+        finish_and_power_off
+        exit 1
+    fi
+    if ! grep -Eq '404|does not have a Release file' \
+        "${invalid_source_log}"; then
+        cat "${invalid_source_log}" >&2
+        echo "RV64-M11: invalid source failed for an unrelated reason" >&2
+        finish_and_power_off
+        exit 1
+    fi
+    echo "RV64-M11 INVALID SOURCE REJECTED"
+
+    record_checkpoint certificate-error-start
+    if ! require_public_dns; then
+        finish_and_power_off
+        exit 1
+    fi
+    certificate_status=0
+    curl --fail --silent --show-error --location \
+        --connect-timeout 30 --max-time 180 \
+        --pinnedpubkey 'sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
+        https://deb.debian.org/debian/ >/dev/null 2>&1 ||
+        certificate_status=$?
+    if [ "${certificate_status}" -ne 90 ]; then
+        echo "RV64-M11: expected curl certificate pin error 90, got ${certificate_status}" >&2
+        finish_and_power_off
+        exit 1
+    fi
+    echo "RV64-M11 CERTIFICATE ERROR REJECTED"
+
+    record_checkpoint disk-full-start
+    full_directory="${fault_root}/full"
+    mkdir -p "${full_directory}"
+    mount -t tmpfs -o size=16k tmpfs "${full_directory}"
+    disk_status=0
+    disk_full_log="${fault_root}/disk-full.log"
+    (cd "${full_directory}" && apt-get download hello) \
+        >"${disk_full_log}" 2>&1 ||
+        disk_status=$?
+    umount "${full_directory}"
+    if [ "${disk_status}" -eq 0 ]; then
+        echo "RV64-M11: package download unexpectedly fit in 16 KiB" >&2
+        finish_and_power_off
+        exit 1
+    fi
+    if ! grep -Eq 'No space left on device|\(28:' \
+        "${disk_full_log}"; then
+        cat "${disk_full_log}" >&2
+        echo "RV64-M11: package download failed for an unrelated reason" >&2
+        finish_and_power_off
+        exit 1
+    fi
+    echo "RV64-M11 DISK FULL REJECTED"
+
+    test -z "$(dpkg --audit)"
+    dpkg-query -W -f='${db:Status-Abbrev} ${Architecture} ${Version}\n' base-files
+    printf '%s\n' complete >"${phase_three_marker}"
+    echo "RV64-M11 PHASE3 PASS: deterministic failure paths preserved the system"
     finish_and_power_off
     exit 0
 fi

@@ -91,7 +91,8 @@ ln -sfn usr/local/sbin/rv64-m11-apt-acceptance \
     "${mount_directory}/m11"
 rm -f \
     "${mount_directory}/var/lib/rv64-m11/phase1-complete" \
-    "${mount_directory}/var/lib/rv64-m11/phase2-complete"
+    "${mount_directory}/var/lib/rv64-m11/phase2-complete" \
+    "${mount_directory}/var/lib/rv64-m11/phase3-complete"
 rmdir "${mount_directory}/var/lib/rv64-m11" 2>/dev/null || true
 
 sync
