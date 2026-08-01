@@ -39,6 +39,8 @@ class SlirpNetworkBackend final : public devices::NetworkBackend {
     SlirpNetworkBackend(SlirpNetworkBackend&&) = delete;
     SlirpNetworkBackend& operator=(SlirpNetworkBackend&&) = delete;
 
+    [[nodiscard]] std::uint64_t tick_interval_cycles()
+        const noexcept override;
     void tick(std::uint64_t cycles) override;
     void send_frame(
         std::span<const std::uint8_t> frame) override;

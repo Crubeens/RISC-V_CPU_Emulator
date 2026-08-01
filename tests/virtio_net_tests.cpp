@@ -58,6 +58,35 @@ class TestBackend final : public rv::devices::NetworkBackend {
     std::deque<std::vector<std::uint8_t>> received;
 };
 
+class BatchedBackend final : public rv::devices::NetworkBackend {
+  public:
+    [[nodiscard]] std::uint64_t tick_interval_cycles()
+        const noexcept override
+    {
+        return 4U;
+    }
+
+    void tick(std::uint64_t cycles) override
+    {
+        ++tick_calls;
+        tick_cycles += cycles;
+    }
+
+    void send_frame(std::span<const std::uint8_t> frame) override
+    {
+        static_cast<void>(frame);
+    }
+
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>>
+    receive_frame() override
+    {
+        return std::nullopt;
+    }
+
+    std::uint64_t tick_calls{};
+    std::uint64_t tick_cycles{};
+};
+
 void write_value(
     rv::platform::SystemBus& bus,
     rv::PhysAddr address,
@@ -458,6 +487,29 @@ void test_short_receive_buffer_and_oversized_frame()
     CHECK(net.statistics().dropped_receive_frames == 2U);
 }
 
+void test_backend_ticks_are_coalesced()
+{
+    rv::platform::SystemBus bus;
+    auto& net = bus.emplace_device<rv::devices::VirtioNet>(
+        net_base,
+        0x1000U);
+    BatchedBackend backend;
+    net.set_backend(&backend);
+
+    bus.tick_devices(1U);
+    CHECK(backend.tick_calls == 1U);
+    CHECK(backend.tick_cycles == 1U);
+    for (std::size_t step = 0; step < 3U; ++step) {
+        bus.tick_devices(1U);
+    }
+    CHECK(backend.tick_calls == 1U);
+    bus.tick_devices(1U);
+    CHECK(backend.tick_calls == 2U);
+    CHECK(backend.tick_cycles == 5U);
+    CHECK(net.statistics().backend_tick_calls == 2U);
+    CHECK(net.statistics().backend_tick_cycles == 5U);
+}
+
 } // namespace
 
 int main()
@@ -465,6 +517,7 @@ int main()
     test_registers_and_queue_validation();
     test_transmit_receive_dma_and_interrupts();
     test_short_receive_buffer_and_oversized_frame();
+    test_backend_ticks_are_coalesced();
     if (failures == 0) {
         std::cout << "All VirtIO network device tests passed\n";
     }

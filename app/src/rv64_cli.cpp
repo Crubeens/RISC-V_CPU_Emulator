@@ -652,6 +652,10 @@ int run_boot(
                 << "/" << device.peak_pending_receive_frames
                 << ", rx-starvations="
                 << device.receive_queue_starvations
+                << ", backend-ticks="
+                << device.backend_tick_calls
+                << "/" << device.backend_tick_cycles
+                << " cycles"
                 << '\n'
                 << "  libslirp guest-to-host="
                 << host.guest_to_host_frames
@@ -723,6 +727,8 @@ int run_boot(
                 << ", rx-starvations="
                 << device.receive_queue_starvations
                 << ", dma-failures=" << device.dma_failures
+                << ", backend-ticks="
+                << device.backend_tick_calls
                 << ", slirp-queue=" << host.queued_host_frames
                 << "/" << host.peak_queued_host_frames
                 << ", slirp-drops=" << host.dropped_host_frames

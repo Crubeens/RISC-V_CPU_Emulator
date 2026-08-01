@@ -466,6 +466,12 @@ SlirpNetworkBackend::SlirpNetworkBackend()
 
 SlirpNetworkBackend::~SlirpNetworkBackend() = default;
 
+std::uint64_t SlirpNetworkBackend::tick_interval_cycles()
+    const noexcept
+{
+    return poll_interval_cycles;
+}
+
 void SlirpNetworkBackend::tick(std::uint64_t cycles)
 {
     if (impl_->accumulated_cycles >

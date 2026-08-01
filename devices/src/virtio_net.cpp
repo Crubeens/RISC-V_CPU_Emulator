@@ -202,11 +202,14 @@ void VirtioNet::tick(
     platform::DmaAccess& dma,
     std::uint64_t cycles)
 {
-    collect_backend_frames(cycles);
+    const bool force_backend_poll = backend_poll_requested_;
+    backend_poll_requested_ = false;
+    collect_backend_frames(cycles, force_backend_poll);
 
     if (queues_[transmit_queue].notification_pending) {
         queues_[transmit_queue].notification_pending = false;
         process_transmit_queue(dma);
+        backend_poll_requested_ = backend_ != nullptr;
     }
 
     if (queues_[receive_queue].notification_pending) {
@@ -220,6 +223,14 @@ void VirtioNet::tick(
 void VirtioNet::set_backend(NetworkBackend* backend) noexcept
 {
     backend_ = backend;
+    backend_tick_cycles_ = 0U;
+    backend_tick_interval_cycles_ =
+        backend == nullptr
+            ? 1U
+            : std::max<std::uint64_t>(
+                  1U,
+                  backend->tick_interval_cycles());
+    backend_poll_requested_ = backend != nullptr;
 }
 
 NetworkBackend* VirtioNet::backend() const noexcept
@@ -297,6 +308,8 @@ void VirtioNet::reset() noexcept
     device_status_ = 0;
     queues_ = {};
     pending_receive_frames_.clear();
+    backend_tick_cycles_ = 0U;
+    backend_poll_requested_ = backend_ != nullptr;
     statistics_.pending_receive_frames = 0U;
 }
 
@@ -322,13 +335,37 @@ void VirtioNet::update_queue_addresses(Queue& queue) noexcept
         queue.alignment);
 }
 
-void VirtioNet::collect_backend_frames(std::uint64_t cycles)
+void VirtioNet::collect_backend_frames(
+    std::uint64_t cycles,
+    bool force_poll)
 {
     if (backend_ == nullptr) {
         return;
     }
 
-    backend_->tick(cycles);
+    if (backend_tick_cycles_ >
+        std::numeric_limits<std::uint64_t>::max() - cycles) {
+        backend_tick_cycles_ =
+            std::numeric_limits<std::uint64_t>::max();
+    } else {
+        backend_tick_cycles_ += cycles;
+    }
+    if (!force_poll &&
+        backend_tick_cycles_ < backend_tick_interval_cycles_) {
+        return;
+    }
+
+    const std::uint64_t elapsed = backend_tick_cycles_;
+    backend_tick_cycles_ = 0U;
+    backend_->tick(elapsed);
+    ++statistics_.backend_tick_calls;
+    if (statistics_.backend_tick_cycles >
+        std::numeric_limits<std::uint64_t>::max() - elapsed) {
+        statistics_.backend_tick_cycles =
+            std::numeric_limits<std::uint64_t>::max();
+    } else {
+        statistics_.backend_tick_cycles += elapsed;
+    }
     while (pending_receive_frames_.size() < maximum_pending_frames) {
         auto frame = backend_->receive_frame();
         if (!frame.has_value()) {

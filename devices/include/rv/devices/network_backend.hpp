@@ -11,6 +11,12 @@ class NetworkBackend {
   public:
     virtual ~NetworkBackend() = default;
 
+    [[nodiscard]] virtual std::uint64_t tick_interval_cycles()
+        const noexcept
+    {
+        return 1U;
+    }
+
     virtual void tick(std::uint64_t cycles)
     {
         static_cast<void>(cycles);

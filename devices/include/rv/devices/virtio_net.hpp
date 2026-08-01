@@ -29,6 +29,8 @@ struct VirtioNetStatistics {
     std::uint64_t dma_failures{};
     std::uint64_t interrupts_raised{};
     std::uint64_t interrupt_acknowledgements{};
+    std::uint64_t backend_tick_calls{};
+    std::uint64_t backend_tick_cycles{};
 };
 
 struct VirtioNetQueueState {
@@ -144,7 +146,9 @@ class VirtioNet final : public platform::Device {
 
     void reset() noexcept;
     void update_queue_addresses(Queue& queue) noexcept;
-    void collect_backend_frames(std::uint64_t cycles);
+    void collect_backend_frames(
+        std::uint64_t cycles,
+        bool force_poll);
     void process_transmit_queue(platform::DmaAccess& dma);
     void process_receive_queue(platform::DmaAccess& dma);
 
@@ -196,6 +200,9 @@ class VirtioNet final : public platform::Device {
     std::array<Queue, 2> queues_{};
     std::deque<std::vector<std::uint8_t>> pending_receive_frames_;
     NetworkBackend* backend_{};
+    std::uint64_t backend_tick_cycles_{};
+    std::uint64_t backend_tick_interval_cycles_{1U};
+    bool backend_poll_requested_{};
 
     std::uint32_t device_features_select_{};
     std::uint32_t driver_features_select_{};
